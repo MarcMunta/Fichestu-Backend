@@ -1,47 +1,65 @@
 # Fichestu-Backend
 
-Backend en **Java + Spring Boot** para Fichestu, pensado para conectarse con el frontend en:
-[Fichestu-Frontend](https://github.com/MarcMunta/Fichestu-Frontend)
+Backend en Java + Spring Boot para Fichestu.
 
-## Funcionalidad implementada (MVP)
+## Estado actual
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
-- Persistencia con Hibernate (Spring Data JPA) en MySQL.
+- Persistencia con Spring Data JPA + MySQL.
+- Esquema completo de `Casino-BitRoyale` gestionado por migraciones Flyway.
 
-El resto de módulos anteriores han sido eliminados para dejar solo autenticación.
-
-## Ejecutar
-
-Desde la raíz del repo:
+## Ejecutar local (sin Docker)
 
 - Windows: `./mvnw.cmd spring-boot:run`
 - Tests: `./mvnw.cmd test`
 
 ## Ejecutar con Docker (backend + MySQL)
 
-Desde la raíz del repo:
+Desde la raiz del repo:
 
 - Windows: `run-docker.bat`
 - Manual: `docker compose up --build -d`
 
-Servicios levantados:
+Servicios:
 
 - Backend: `http://localhost:8081`
-- MySQL: `localhost:3306` (db: `fichestu`, user: `root`, pass: `root`)
+- MySQL: `localhost:3306` (db: `fichestu_db`, user: `root`, pass: `root`)
 
 Parar servicios:
 
 - `docker compose down`
 
-## Base de datos (Hibernate + MySQL)
+## Actualizacion en tiempo real (Docker)
 
-Variables opcionales para configurar MySQL:
+Con los contenedores levantados:
 
-- `DB_URL` (ej: `jdbc:mysql://localhost:3306/fichestu?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC`)
-- `DB_USERNAME`
-- `DB_PASSWORD`
-- `DB_DRIVER` (ej: `com.mysql.cj.jdbc.Driver`)
-- `HIBERNATE_DDL_AUTO` (por defecto `update`)
+- `docker compose watch`
 
-En tests se usa H2 automáticamente (`src/test/resources/application.properties`).
+Esto reconstruye/reinicia el backend cuando hay cambios en el repo.
+Las migraciones nuevas de Flyway se aplican automaticamente al reiniciar.
+
+## Base de datos oficial del proyecto
+
+La estructura completa esta en:
+
+- `src/main/resources/db/migration/V0__casino_bitroyale_schema.sql`
+
+Incluye tablas:
+
+- `users`, `badges`, `user_badges`
+- `tokens`, `user_wallets`, `token_price_history`
+- `game_sessions`, `match_participants`, `match_cards`
+- `transactions_log`
+
+Tambien incluye seed inicial de tokens y usuarios (`SuperAdmin`, `Jugador1`).
+
+## Regla de cambios de esquema
+
+No edites migraciones ya aplicadas en entornos con datos.
+Para cambios de BBDD, agrega un nuevo archivo:
+
+- `src/main/resources/db/migration/V2__...sql`
+- `src/main/resources/db/migration/V3__...sql`
+
+Flyway lo detecta y lo ejecuta al arrancar el backend.

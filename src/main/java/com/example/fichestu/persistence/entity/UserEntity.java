@@ -2,46 +2,71 @@ package com.example.fichestu.persistence.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Entity
-@Table(name = "app_user")
+@Table(name = "users")
 public class UserEntity {
 
     @Id
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "user_id")
+    private Integer userId;
 
-    @Column(nullable = false)
-    private String displayName;
+    @Column(nullable = false, unique = true, length = 50)
+    private String username;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    @Column(nullable = false)
+    @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
-    @Column(nullable = false)
-    private String photoUrl = "";
+    @Column(name = "profile_pic_url", columnDefinition = "TEXT")
+    private String profilePicUrl;
 
-    @Column(nullable = false, precision = 19, scale = 2)
-    private BigDecimal euroBalance = BigDecimal.ZERO;
+    @Column(name = "fiat_balance", nullable = false, precision = 15, scale = 2)
+    private BigDecimal fiatBalance = BigDecimal.ZERO;
 
-    public String getId() {
-        return id;
+    @Column(nullable = false, length = 20)
+    private String role = "USER";
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+        if (fiatBalance == null) {
+            fiatBalance = BigDecimal.ZERO;
+        }
+        if (role == null || role.isBlank()) {
+            role = "USER";
+        }
     }
 
-    public void setId(String id) {
-        this.id = id;
+    public Integer getUserId() {
+        return userId;
     }
 
-    public String getDisplayName() {
-        return displayName;
+    public void setUserId(Integer userId) {
+        this.userId = userId;
     }
 
-    public void setDisplayName(String displayName) {
-        this.displayName = displayName;
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getEmail() {
@@ -60,19 +85,35 @@ public class UserEntity {
         this.passwordHash = passwordHash;
     }
 
-    public String getPhotoUrl() {
-        return photoUrl;
+    public String getProfilePicUrl() {
+        return profilePicUrl;
     }
 
-    public void setPhotoUrl(String photoUrl) {
-        this.photoUrl = photoUrl;
+    public void setProfilePicUrl(String profilePicUrl) {
+        this.profilePicUrl = profilePicUrl;
     }
 
-    public BigDecimal getEuroBalance() {
-        return euroBalance;
+    public BigDecimal getFiatBalance() {
+        return fiatBalance;
     }
 
-    public void setEuroBalance(BigDecimal euroBalance) {
-        this.euroBalance = euroBalance;
+    public void setFiatBalance(BigDecimal fiatBalance) {
+        this.fiatBalance = fiatBalance;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 }

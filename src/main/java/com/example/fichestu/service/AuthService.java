@@ -6,7 +6,6 @@ import com.example.fichestu.api.AuthDtos.RegisterRequest;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.repository.UserRepository;
 import java.math.BigDecimal;
-import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,17 +25,26 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         String normalizedEmail = request.getEmail().trim().toLowerCase();
+        String normalizedUsername = request.getUsername().trim();
+
+        if (normalizedUsername.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El username es obligatorio");
+        }
+
         if (userRepository.existsByEmail(normalizedEmail)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "El email ya está registrado");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "El email ya esta registrado");
+        }
+        if (userRepository.existsByUsername(normalizedUsername)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "El username ya esta registrado");
         }
 
         UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID().toString());
-        user.setDisplayName(request.getUsername().trim());
+        user.setUsername(normalizedUsername);
         user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setPhotoUrl("");
-        user.setEuroBalance(BigDecimal.ZERO);
+        user.setProfilePicUrl(null);
+        user.setFiatBalance(BigDecimal.ZERO);
+        user.setRole("USER");
 
         userRepository.save(user);
 
@@ -47,13 +55,26 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
         String normalizedEmail = request.getEmail().trim().toLowerCase();
         UserEntity user = userRepository.findByEmail(normalizedEmail)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenciales inválidas"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenciales invalidas"));
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenciales inválidas");
+        if (!passwordMatches(request.getPassword(), user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenciales invalidas");
         }
 
-        String token = UUID.randomUUID().toString();
+        String token = "user-" + user.getUserId();
         return new AuthResponse(token, "Login correcto", true);
+    }
+
+    private boolean passwordMatches(String rawPassword, String storedPasswordHash) {
+        if (storedPasswordHash == null || storedPasswordHash.isEmpty()) {
+            return false;
+        }
+
+        if (storedPasswordHash.startsWith("$2a$") || storedPasswordHash.startsWith("$2b$")) {
+            return passwordEncoder.matches(rawPassword, storedPasswordHash);
+        }
+
+        // Compatibility for seed users that still have plain-text passwords.
+        return rawPassword.equals(storedPasswordHash);
     }
 }

@@ -4,10 +4,8 @@ services:
     container_name: fichestu-mysql
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: fichestu
+      MYSQL_DATABASE: fichestu_db
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_USER: fichestu
-      MYSQL_PASSWORD: fichestu
     ports:
       - "3306:3306"
     volumes:
@@ -28,12 +26,16 @@ services:
       db:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:mysql://db:3306/fichestu?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_URL: jdbc:mysql://db:3306/fichestu_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       DB_USERNAME: root
       DB_PASSWORD: root
-      HIBERNATE_DDL_AUTO: update
+      HIBERNATE_DDL_AUTO: validate
     ports:
       - "8081:8080"
+    develop:
+      watch:
+        - action: rebuild
+          path: .
 
 volumes:
   mysql_data:

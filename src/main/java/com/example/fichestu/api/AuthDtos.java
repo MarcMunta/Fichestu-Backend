@@ -1,5 +1,6 @@
 package com.example.fichestu.api;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
@@ -10,6 +11,7 @@ public final class AuthDtos {
 
     public static class RegisterRequest {
         @NotBlank
+        @JsonAlias({"displayName", "name"})
         private String username;
 
         @NotBlank
