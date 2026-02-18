@@ -27,7 +27,7 @@ Desde la raíz del repo:
 
 Servicios levantados:
 
-- Backend: `http://localhost:8080`
+- Backend: `http://localhost:8081`
 - MySQL: `localhost:3306` (db: `fichestu`, user: `root`, pass: `root`)
 
 Parar servicios:

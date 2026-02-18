@@ -15,7 +15,7 @@ if errorlevel 1 (
 
 echo.
 echo Backend y MySQL levantados correctamente.
-echo - Backend: http://localhost:8080
+echo - Backend: http://localhost:8081
 echo - MySQL:   localhost:3306
 echo.
 echo Para ver logs: docker compose logs -f backend
