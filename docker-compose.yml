@@ -1,0 +1,39 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: fichestu-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: fichestu
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: fichestu
+      MYSQL_PASSWORD: fichestu
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fichestu-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://db:3306/fichestu?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      HIBERNATE_DDL_AUTO: update
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql_data:
