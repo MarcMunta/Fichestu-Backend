@@ -3,8 +3,12 @@ setlocal
 
 where docker >nul 2>&1
 if errorlevel 1 (
-  echo [ERROR] Docker no esta instalado o no esta en el PATH.
-  exit /b 1
+  if exist "C:\Program Files\Docker\Docker\resources\bin\docker.exe" (
+    set "PATH=%PATH%;C:\Program Files\Docker\Docker\resources\bin"
+  ) else (
+    echo [ERROR] Docker no esta instalado o no esta en el PATH.
+    exit /b 1
+  )
 )
 
 docker compose up --build -d
