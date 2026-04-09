@@ -37,5 +37,20 @@ services:
         - action: rebuild
           path: .
 
+  phpmyadmin:
+    image: phpmyadmin:5-apache
+    container_name: fichestu-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: root
+    ports:
+      - "8080:80"
+
 volumes:
   mysql_data:
