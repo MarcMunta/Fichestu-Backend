@@ -77,4 +77,10 @@ public final class AuthDtos {
         Boolean success
     ) {
     }
+    
+    public static class GoogleRequest {
+        private String idToken;
+        public String getIdToken() { return idToken; }
+        public void setIdToken(String idToken) { this.idToken = idToken; }
+    }
 }

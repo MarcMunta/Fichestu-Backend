@@ -1,6 +1,7 @@
 package com.example.fichestu.api;
 
 import com.example.fichestu.api.AuthDtos.AuthResponse;
+import com.example.fichestu.api.AuthDtos.GoogleRequest;
 import com.example.fichestu.api.AuthDtos.LoginRequest;
 import com.example.fichestu.api.AuthDtos.RegisterRequest;
 import com.example.fichestu.service.AuthService;
@@ -28,5 +29,10 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+    
+    @PostMapping("/google")
+    public AuthResponse googleLogin(@RequestBody GoogleRequest request) {
+    	return authService.loginWithGoogle(request.getIdToken());
     }
 }
