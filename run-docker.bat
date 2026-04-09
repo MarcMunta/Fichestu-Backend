@@ -18,9 +18,10 @@ if errorlevel 1 (
 )
 
 echo.
-echo Backend y MySQL levantados correctamente.
+echo Backend, MySQL y phpMyAdmin levantados correctamente.
 echo - Backend: http://localhost:8081
 echo - MySQL:   localhost:3306 (db: fichestu_db, user: root, pass: root)
+echo - phpMyAdmin: http://localhost:8080 (user: root, pass: root)
 echo.
 echo Para ver logs: docker compose logs -f backend
 echo Para parar:    docker compose down
