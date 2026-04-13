@@ -96,7 +96,6 @@ public class AuthService {
                     new NetHttpTransport(), 
                     new GsonFactory()
                 )
-                // Aceptamos cualquiera de los tres IDs
             	.setAudience(Arrays.asList(GOOGLE_CLIENT_ID_WEB, GOOGLE_CLIENT_ID_ANDROID))
                 .build();
 
