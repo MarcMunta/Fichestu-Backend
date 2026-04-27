@@ -1,7 +1,11 @@
 package com.example.fichestu.api;
 
+import com.example.fichestu.api.GameDtos.BadgeDto;
+import com.example.fichestu.api.GameDtos.ProfileStatsDto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import java.util.List;
 
 public final class ProfileDtos {
 
@@ -26,6 +30,9 @@ public final class ProfileDtos {
         @Email
         private String email;
 
+        @Size(max = 512)
+        private String profilePicUrl;
+
         public String getUsername() {
             return username;
         }
@@ -41,14 +48,33 @@ public final class ProfileDtos {
         public void setEmail(String email) {
             this.email = email;
         }
+
+        public String getProfilePicUrl() {
+            return profilePicUrl;
+        }
+
+        public void setProfilePicUrl(String profilePicUrl) {
+            this.profilePicUrl = profilePicUrl;
+        }
     }
 
     public static class ChangePasswordRequest {
+        @NotBlank
+        private String currentPassword;
+
         @NotBlank
         private String newPassword;
 
         @NotBlank
         private String confirmPassword;
+
+        public String getCurrentPassword() {
+            return currentPassword;
+        }
+
+        public void setCurrentPassword(String currentPassword) {
+            this.currentPassword = currentPassword;
+        }
 
         public String getNewPassword() {
             return newPassword;
@@ -70,6 +96,20 @@ public final class ProfileDtos {
     public record GenericResponse(
         String message,
         Boolean success
+    ) {
+    }
+
+    public record BadgeListResponse(
+        String message,
+        Boolean success,
+        List<BadgeDto> badges
+    ) {
+    }
+
+    public record StatsResponse(
+        String message,
+        Boolean success,
+        ProfileStatsDto stats
     ) {
     }
 }

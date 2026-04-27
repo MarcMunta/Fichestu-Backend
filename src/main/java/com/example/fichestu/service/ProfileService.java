@@ -1,11 +1,16 @@
 package com.example.fichestu.service;
 
+import com.example.fichestu.api.ProfileDtos.BadgeListResponse;
 import com.example.fichestu.api.ProfileDtos.ChangePasswordRequest;
 import com.example.fichestu.api.ProfileDtos.GenericResponse;
 import com.example.fichestu.api.ProfileDtos.ProfileResponse;
+import com.example.fichestu.api.ProfileDtos.StatsResponse;
 import com.example.fichestu.api.ProfileDtos.UpdateProfileRequest;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.repository.UserRepository;
+import com.example.fichestu.security.CurrentUserService;
+import java.net.URI;
+import java.net.URISyntaxException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,24 +21,34 @@ import org.springframework.web.server.ResponseStatusException;
 public class ProfileService {
 
     private final UserRepository userRepository;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final CurrentUserService currentUserService;
+    private final PlayerProfileReadService playerProfileReadService;
+    private final BCryptPasswordEncoder passwordEncoder;
 
-    public ProfileService(UserRepository userRepository) {
+    public ProfileService(
+        UserRepository userRepository,
+        CurrentUserService currentUserService,
+        PlayerProfileReadService playerProfileReadService,
+        BCryptPasswordEncoder passwordEncoder
+    ) {
         this.userRepository = userRepository;
+        this.currentUserService = currentUserService;
+        this.playerProfileReadService = playerProfileReadService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional(readOnly = true)
-    public ProfileResponse getProfile(String authHeader) {
-        UserEntity user = resolveUser(authHeader);
-        return toProfileResponse(user, "Perfil cargado");
+    public ProfileResponse getProfile() {
+        return toProfileResponse(currentUserService.requireUserEntity(), "Perfil cargado");
     }
 
     @Transactional
-    public ProfileResponse updateProfile(String authHeader, UpdateProfileRequest request) {
-        UserEntity user = resolveUser(authHeader);
+    public ProfileResponse updateProfile(UpdateProfileRequest request) {
+        UserEntity user = currentUserService.requireUserEntity();
 
         String normalizedUsername = request.getUsername().trim();
         String normalizedEmail = request.getEmail().trim().toLowerCase();
+        String profilePicUrl = normalizeProfilePicUrl(request.getProfilePicUrl());
 
         if (normalizedUsername.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El username es obligatorio");
@@ -49,20 +64,26 @@ public class ProfileService {
 
         user.setUsername(normalizedUsername);
         user.setEmail(normalizedEmail);
+        user.setProfilePicUrl(profilePicUrl);
         userRepository.save(user);
 
         return toProfileResponse(user, "Perfil actualizado");
     }
 
     @Transactional
-    public GenericResponse changePassword(String authHeader, ChangePasswordRequest request) {
-        UserEntity user = resolveUser(authHeader);
+    public GenericResponse changePassword(ChangePasswordRequest request) {
+        UserEntity user = currentUserService.requireUserEntity();
 
+        String currentPassword = request.getCurrentPassword();
         String newPassword = request.getNewPassword();
         String confirm = request.getConfirmPassword();
 
-        if (newPassword == null || newPassword.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La nueva contraseña es obligatoria");
+        if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La cuenta no tiene una contraseña local configurada");
+        }
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La contraseña actual no es correcta");
         }
 
         if (!newPassword.equals(confirm)) {
@@ -79,26 +100,40 @@ public class ProfileService {
         return new GenericResponse("Contraseña actualizada", true);
     }
 
-    private UserEntity resolveUser(String authHeader) {
-        if (authHeader == null || authHeader.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sesion invalida");
-        }
+    @Transactional
+    public BadgeListResponse getBadges() {
+        UserEntity user = currentUserService.requireUserEntity();
+        return new BadgeListResponse(
+            "Badges cargados",
+            true,
+            playerProfileReadService.loadBadgesForUser(user.getUserId())
+        );
+    }
 
-        String token = authHeader.trim();
-        if (token.startsWith("Bearer ")) {
-            token = token.substring(7).trim();
-        }
+    @Transactional(readOnly = true)
+    public StatsResponse getStats() {
+        UserEntity user = currentUserService.requireUserEntity();
+        return new StatsResponse(
+            "Estadisticas cargadas",
+            true,
+            playerProfileReadService.loadStatsForUser(user.getUserId())
+        );
+    }
 
-        if (!token.startsWith("user-")) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sesion invalida");
+    private String normalizeProfilePicUrl(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
         }
 
         try {
-            Integer userId = Integer.parseInt(token.substring("user-".length()));
-            return userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sesion invalida"));
-        } catch (NumberFormatException ex) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sesion invalida");
+            URI uri = new URI(rawValue.trim());
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La imagen de perfil debe usar http o https");
+            }
+            return rawValue.trim();
+        } catch (URISyntaxException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La imagen de perfil no es una URL valida");
         }
     }
 
