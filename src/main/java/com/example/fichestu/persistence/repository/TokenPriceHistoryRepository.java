@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TokenPriceHistoryRepository extends JpaRepository<TokenPriceHistoryEntity, Integer> {
     List<TokenPriceHistoryEntity> findTop28ByTokenTokenIdOrderByRecordedAtDesc(Integer tokenId);
+
+    long countByTokenTokenId(Integer tokenId);
 }

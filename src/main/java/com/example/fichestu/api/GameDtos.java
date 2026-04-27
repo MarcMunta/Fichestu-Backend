@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 public final class GameDtos {
@@ -87,6 +88,27 @@ public final class GameDtos {
     ) {
     }
 
+    public record MarketSnapshotResponse(
+        String message,
+        Boolean success,
+        BigDecimal cashBalance,
+        BigDecimal totalBalance,
+        Integer rewardedCooldownSec,
+        Integer rewardedAdsClaimed,
+        List<TokenDto> tokens,
+        List<TransactionDto> transactions
+    ) {
+    }
+
+    public record TransactionDto(
+        Integer transactionId,
+        String type,
+        BigDecimal amountFiat,
+        String description,
+        Instant createdAt
+    ) {
+    }
+
     public record EnterBallRoomResponse(
         String message,
         Boolean success,
@@ -164,6 +186,19 @@ public final class GameDtos {
 
         public void setSelectedToken(String selectedToken) {
             this.selectedToken = selectedToken;
+        }
+    }
+
+    public static class WinnerImpactRequest {
+        @NotBlank
+        private String token;
+
+        public String getToken() {
+            return token;
+        }
+
+        public void setToken(String token) {
+            this.token = token;
         }
     }
 
