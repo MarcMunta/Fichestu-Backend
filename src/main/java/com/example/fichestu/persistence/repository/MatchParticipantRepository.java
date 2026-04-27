@@ -9,4 +9,10 @@ public interface MatchParticipantRepository extends JpaRepository<MatchParticipa
     List<MatchParticipantEntity> findByIdMatchId(Integer matchId);
 
     List<MatchParticipantEntity> findByIdUserId(Integer userId);
+
+    long countByIdMatchId(Integer matchId);
+
+    long countByIdMatchIdAndSelectedBallNumberIsNotNull(Integer matchId);
+
+    boolean existsByIdMatchIdAndIdUserId(Integer matchId, Integer userId);
 }
