@@ -1,8 +1,10 @@
 package com.example.fichestu.api;
 
 import com.example.fichestu.api.ProfileDtos.ChangePasswordRequest;
+import com.example.fichestu.api.ProfileDtos.BadgeListResponse;
 import com.example.fichestu.api.ProfileDtos.GenericResponse;
 import com.example.fichestu.api.ProfileDtos.ProfileResponse;
+import com.example.fichestu.api.ProfileDtos.StatsResponse;
 import com.example.fichestu.api.ProfileDtos.UpdateProfileRequest;
 import com.example.fichestu.service.ProfileService;
 import jakarta.validation.Valid;
@@ -25,23 +27,27 @@ public class ProfileController {
     }
 
     @GetMapping
-    public ProfileResponse getProfile(@RequestHeader("Authorization") String authorization) {
-        return profileService.getProfile(authorization);
+    public ProfileResponse getProfile() {
+        return profileService.getProfile();
+    }
+
+    @GetMapping("/badges")
+    public BadgeListResponse getBadges() {
+        return profileService.getBadges();
+    }
+
+    @GetMapping("/stats")
+    public StatsResponse getStats() {
+        return profileService.getStats();
     }
 
     @PutMapping
-    public ProfileResponse updateProfile(
-        @RequestHeader("Authorization") String authorization,
-        @Valid @RequestBody UpdateProfileRequest request
-    ) {
-        return profileService.updateProfile(authorization, request);
+    public ProfileResponse updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
+        return profileService.updateProfile(request);
     }
 
     @PostMapping("/change-password")
-    public GenericResponse changePassword(
-        @RequestHeader("Authorization") String authorization,
-        @Valid @RequestBody ChangePasswordRequest request
-    ) {
-        return profileService.changePassword(authorization, request);
+    public GenericResponse changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        return profileService.changePassword(request);
     }
 }
