@@ -3,6 +3,7 @@ package com.example.fichestu.api;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public final class AuthDtos {
 
@@ -11,6 +12,7 @@ public final class AuthDtos {
 
     public static class RegisterRequest {
         @NotBlank
+        @Size(max = 50)
         @JsonAlias({"displayName", "name"})
         private String username;
 
@@ -77,10 +79,23 @@ public final class AuthDtos {
         Boolean success
     ) {
     }
-    
+
     public static class GoogleRequest {
+        @NotBlank
         private String idToken;
+
         public String getIdToken() { return idToken; }
+
         public void setIdToken(String idToken) { this.idToken = idToken; }
+    }
+
+    public record SessionResponse(
+        String message,
+        Boolean success,
+        Integer userId,
+        String username,
+        String email,
+        String role
+    ) {
     }
 }
