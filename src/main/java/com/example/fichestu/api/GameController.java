@@ -4,9 +4,11 @@ import com.example.fichestu.api.GameDtos.BattleActionRequest;
 import com.example.fichestu.api.GameDtos.CooldownResponse;
 import com.example.fichestu.api.GameDtos.EnterBallRoomResponse;
 import com.example.fichestu.api.GameDtos.GenericMessageResponse;
+import com.example.fichestu.api.GameDtos.MarketSnapshotResponse;
 import com.example.fichestu.api.GameDtos.MatchStateResponse;
 import com.example.fichestu.api.GameDtos.PickBallRequest;
 import com.example.fichestu.api.GameDtos.TradeRequest;
+import com.example.fichestu.api.GameDtos.WinnerImpactRequest;
 import com.example.fichestu.api.GameDtos.WalletResponse;
 import com.example.fichestu.service.GameService;
 import jakarta.validation.Valid;
@@ -14,7 +16,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,72 +30,76 @@ public class GameController {
     }
 
     @GetMapping("/bootstrap")
-    public GameDtos.BootstrapResponse bootstrap(@RequestHeader("Authorization") String authorization) {
-        return gameService.bootstrap(authorization);
+    public GameDtos.BootstrapResponse bootstrap() {
+        return gameService.bootstrap();
+    }
+
+    @GetMapping("/market")
+    public MarketSnapshotResponse marketSnapshot() {
+        return gameService.marketSnapshot();
     }
 
     @GetMapping("/match/state")
-    public MatchStateResponse getCurrentMatchState(@RequestHeader("Authorization") String authorization) {
-        return gameService.currentMatchState(authorization);
+    public MatchStateResponse getCurrentMatchState() {
+        return gameService.currentMatchState();
     }
 
     @PostMapping("/market/buy")
-    public WalletResponse buy(
-        @RequestHeader("Authorization") String authorization,
-        @Valid @RequestBody TradeRequest request
-    ) {
-        return gameService.buy(authorization, request.getToken(), request.getQuantity());
+    public WalletResponse buy(@Valid @RequestBody TradeRequest request) {
+        return gameService.buy(request.getToken(), request.getQuantity());
     }
 
     @PostMapping("/market/sell")
-    public WalletResponse sell(
-        @RequestHeader("Authorization") String authorization,
-        @Valid @RequestBody TradeRequest request
-    ) {
-        return gameService.sell(authorization, request.getToken(), request.getQuantity());
+    public WalletResponse sell(@Valid @RequestBody TradeRequest request) {
+        return gameService.sell(request.getToken(), request.getQuantity());
     }
 
     @PostMapping("/ball-room/enter")
-    public EnterBallRoomResponse enterBallRoom(@RequestHeader("Authorization") String authorization) {
-        return gameService.enterBallRoom(authorization);
+    public EnterBallRoomResponse enterBallRoom() {
+        return gameService.enterBallRoom();
+    }
+
+    @PostMapping("/matches/{matchId}/join")
+    public EnterBallRoomResponse joinMatch(@PathVariable Integer matchId) {
+        return gameService.joinMatch(matchId);
     }
 
     @PostMapping("/matches/{matchId}/pick-ball")
     public MatchStateResponse pickBall(
-        @RequestHeader("Authorization") String authorization,
         @PathVariable Integer matchId,
         @Valid @RequestBody PickBallRequest request
     ) {
-        return gameService.pickBall(authorization, matchId, request.getBallId());
+        return gameService.pickBall(matchId, request.getBallId());
     }
 
     @PostMapping("/matches/{matchId}/reveal")
-    public MatchStateResponse revealMultipliers(
-        @RequestHeader("Authorization") String authorization,
-        @PathVariable Integer matchId
-    ) {
-        return gameService.revealMultipliers(authorization, matchId);
+    public MatchStateResponse revealMultipliers(@PathVariable Integer matchId) {
+        return gameService.revealMultipliers(matchId);
     }
 
     @PostMapping("/matches/{matchId}/battle/round")
     public MatchStateResponse playRound(
-        @RequestHeader("Authorization") String authorization,
         @PathVariable Integer matchId,
         @Valid @RequestBody BattleActionRequest request
     ) {
-        return gameService.playBattleRound(authorization, matchId, request.getAction(), request.getSelectedToken());
+        return gameService.playBattleRound(matchId, request.getAction(), request.getSelectedToken());
+    }
+
+    @PostMapping("/matches/{matchId}/winner-impact")
+    public MatchStateResponse applyWinnerImpact(
+        @PathVariable Integer matchId,
+        @Valid @RequestBody WinnerImpactRequest request
+    ) {
+        return gameService.applyWinnerImpact(matchId, request.getToken());
     }
 
     @PostMapping("/matches/{matchId}/close")
-    public GenericMessageResponse closeMatch(
-        @RequestHeader("Authorization") String authorization,
-        @PathVariable Integer matchId
-    ) {
-        return gameService.closeMatch(authorization, matchId);
+    public GenericMessageResponse closeMatch(@PathVariable Integer matchId) {
+        return gameService.closeMatch(matchId);
     }
 
     @PostMapping("/rewarded/claim")
-    public CooldownResponse claimRewarded(@RequestHeader("Authorization") String authorization) {
-        return gameService.claimRewarded(authorization);
+    public CooldownResponse claimRewarded() {
+        return gameService.claimRewarded();
     }
 }
