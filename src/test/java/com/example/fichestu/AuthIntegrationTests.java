@@ -1,7 +1,9 @@
 package com.example.fichestu;
 
+import com.example.fichestu.persistence.entity.PasswordResetTokenEntity;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -71,6 +73,77 @@ class AuthIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void passwordResetRequestCreatesTokenWithoutLeakingEmailExistence() throws Exception {
+        createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        mockMvc.perform(post("/api/auth/password-reset/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("email", "alice@test.com"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.message").value("Si el email existe, recibiras instrucciones para restablecer la contrasena"));
+
+        assertThat(passwordResetTokenRepository.count()).isEqualTo(1);
+
+        mockMvc.perform(post("/api/auth/password-reset/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("email", "missing@test.com"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.message").value("Si el email existe, recibiras instrucciones para restablecer la contrasena"));
+
+        assertThat(passwordResetTokenRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void passwordResetConfirmUpdatesPassword() throws Exception {
+        var user = createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        createPasswordResetToken(user, "123456", Instant.now().plus(Duration.ofMinutes(10)));
+
+        mockMvc.perform(post("/api/auth/password-reset/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "email", "alice@test.com",
+                    "token", "123456",
+                    "newPassword", "new-secret",
+                    "confirmPassword", "new-secret"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.message").value("Contrasena actualizada correctamente"));
+
+        var updatedUser = userRepository.findByEmail("alice@test.com").orElseThrow();
+        assertThat(passwordEncoder.matches("new-secret", updatedUser.getPasswordHash())).isTrue();
+        assertThat(passwordResetTokenRepository.findAll().get(0).getUsedAt()).isNotNull();
+
+        mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "email", "alice@test.com",
+                    "password", "new-secret"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.token").isString());
+    }
+
+    @Test
+    void passwordResetConfirmRejectsInvalidToken() throws Exception {
+        var user = createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        createPasswordResetToken(user, "123456", Instant.now().plus(Duration.ofMinutes(10)));
+
+        mockMvc.perform(post("/api/auth/password-reset/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "email", "alice@test.com",
+                    "token", "000000",
+                    "newPassword", "new-secret",
+                    "confirmPassword", "new-secret"
+                ))))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Token invalido o caducado"));
+    }
+
+    @Test
     void protectedEndpointAcceptsValidJwt() throws Exception {
         var user = createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
@@ -111,5 +184,17 @@ class AuthIntegrationTests extends IntegrationTestSupport {
                 .header("Authorization", bearerFor(user)))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.message").value("No tienes permisos para esta operacion"));
+    }
+
+    private void createPasswordResetToken(
+        com.example.fichestu.persistence.entity.UserEntity user,
+        String rawToken,
+        Instant expiresAt
+    ) {
+        PasswordResetTokenEntity resetToken = new PasswordResetTokenEntity();
+        resetToken.setUser(user);
+        resetToken.setTokenHash(passwordEncoder.encode(rawToken));
+        resetToken.setExpiresAt(expiresAt);
+        passwordResetTokenRepository.save(resetToken);
     }
 }

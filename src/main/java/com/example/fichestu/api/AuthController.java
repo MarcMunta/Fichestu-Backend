@@ -3,6 +3,8 @@ package com.example.fichestu.api;
 import com.example.fichestu.api.AuthDtos.AuthResponse;
 import com.example.fichestu.api.AuthDtos.GoogleRequest;
 import com.example.fichestu.api.AuthDtos.LoginRequest;
+import com.example.fichestu.api.AuthDtos.PasswordResetConfirmRequest;
+import com.example.fichestu.api.AuthDtos.PasswordResetRequest;
 import com.example.fichestu.api.AuthDtos.RegisterRequest;
 import com.example.fichestu.api.AuthDtos.SessionResponse;
 import com.example.fichestu.api.ProfileDtos.GenericResponse;
@@ -38,6 +40,16 @@ public class AuthController {
     @PostMapping("/google")
     public AuthResponse googleLogin(@Valid @RequestBody GoogleRequest request) {
         return authService.loginWithGoogle(request.getIdToken());
+    }
+
+    @PostMapping("/password-reset/request")
+    public GenericResponse requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
+        return authService.requestPasswordReset(request);
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public GenericResponse confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmRequest request) {
+        return authService.confirmPasswordReset(request);
     }
 
     @GetMapping("/me")
