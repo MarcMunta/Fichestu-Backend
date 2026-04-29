@@ -395,8 +395,7 @@ public class GameService {
             .filter(p -> Boolean.TRUE.equals(p.getAlive()) && "BOT".equalsIgnoreCase(p.getUser().getRole()))
             .forEach(botParticipant -> {
                 if (matchCardRepository.findByMatchMatchIdAndOwnerUserIdAndRoundNumber(matchId, botParticipant.getUser().getUserId(), roundNumber).isEmpty()) {
-                    String botAction = randomAction();
-                    persistCard(session, botParticipant.getUser(), botAction, roundNumber, "Fichestu Token");
+                    persistCard(session, botParticipant.getUser(), randomAction(), roundNumber, randomTokenAlias());
                 }
             });
 
@@ -414,6 +413,29 @@ public class GameService {
         Instant now = Instant.now();
         for (GameSessionEntity session : gameSessionRepository.findExpiredSelectionRoomsForUpdate(now)) {
             finalizeSelectionWindow(session);
+        }
+    }
+
+    @Scheduled(fixedDelay = 1000)
+    @Transactional
+    public void processBotBattleRounds() {
+        for (GameSessionEntity session : gameSessionRepository.findActiveBattleRoomsForUpdate()) {
+            List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+            long aliveHumans = participants.stream()
+                .filter(participant -> Boolean.TRUE.equals(participant.getAlive()))
+                .filter(participant -> !"BOT".equalsIgnoreCase(participant.getUser().getRole()))
+                .count();
+            if (aliveHumans > 0) {
+                continue;
+            }
+
+            int roundNumber = currentRoundNumber(session.getMatchId());
+            submitMissingBotActions(session, participants, roundNumber);
+            long aliveCount = participants.stream().filter(participant -> Boolean.TRUE.equals(participant.getAlive())).count();
+            long submittedCount = matchCardRepository.countByMatchMatchIdAndRoundNumber(session.getMatchId(), roundNumber);
+            if (aliveCount > 0 && submittedCount >= aliveCount) {
+                resolveBattleRoundInternal(session);
+            }
         }
     }
 
@@ -447,15 +469,21 @@ public class GameService {
     public MatchStateResponse resolveBattleRound(Integer matchId) {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
+        resolveBattleRoundInternal(session);
+        return buildMatchStateResponse(session, user.getUserId(), "Ronda resuelta", null);
+    }
 
+    private void resolveBattleRoundInternal(GameSessionEntity session) {
+        Integer matchId = session.getMatchId();
         if (!"IN_PROGRESS".equalsIgnoreCase(session.getStatus()) && !"REVEALED".equalsIgnoreCase(session.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "No hay ronda lista para resolver");
         }
         if ("FINISHED".equalsIgnoreCase(session.getStatus())) {
-            return buildMatchStateResponse(session, user.getUserId(), "La batalla ya ha terminado", null);
+            return;
         }
 
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        submitMissingBotActions(session, participants, currentRoundNumber(matchId));
         int roundNumber = currentRoundNumber(matchId);
         List<MatchCardEntity> cards = matchCardRepository.findByMatchMatchIdAndRoundNumber(matchId, roundNumber);
         long aliveCount = participants.stream().filter(participant -> Boolean.TRUE.equals(participant.getAlive())).count();
@@ -551,8 +579,6 @@ public class GameService {
                 logEvent(session, "DRAW", "La partida termina en empate.");
             }
         }
-
-        return buildMatchStateResponse(session, user.getUserId(), "Ronda resuelta", null);
     }
 
     @Transactional
@@ -1032,6 +1058,22 @@ public class GameService {
         logEvent(session, "MULTIPLIERS_REVEALED", "Los multiplicadores ya son visibles para todos los jugadores.");
     }
 
+    private void submitMissingBotActions(GameSessionEntity session, List<MatchParticipantEntity> participants, int roundNumber) {
+        participants.stream()
+            .filter(participant -> Boolean.TRUE.equals(participant.getAlive()))
+            .filter(participant -> "BOT".equalsIgnoreCase(participant.getUser().getRole()))
+            .forEach(botParticipant -> {
+                if (matchCardRepository.findByMatchMatchIdAndOwnerUserIdAndRoundNumber(
+                    session.getMatchId(),
+                    botParticipant.getUser().getUserId(),
+                    roundNumber
+                ).isEmpty()) {
+                    persistCard(session, botParticipant.getUser(), randomAction(), roundNumber, randomTokenAlias());
+                    logEvent(session, "BATTLE_ACTION", botParticipant.getUser().getUsername() + " envio accion para la ronda " + roundNumber + ".");
+                }
+            });
+    }
+
     private void ensureSufficientBalance(UserEntity user, String actionDescription) {
         if (user.getFiatBalance().compareTo(BALL_ENTRY_COST) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente para " + actionDescription);
@@ -1140,6 +1182,15 @@ public class GameService {
             return "SHIELD";
         }
         return "REBOUND";
+    }
+
+    private String randomTokenAlias() {
+        return switch (randomProvider.nextInt(4)) {
+            case 0 -> "FRO";
+            case 1 -> "FAZ";
+            case 2 -> "FVD";
+            default -> "FGD";
+        };
     }
 
     private String formatMultiplier(double value) {
