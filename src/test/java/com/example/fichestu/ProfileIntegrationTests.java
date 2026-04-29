@@ -86,7 +86,7 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
                     "confirmPassword", "new-secret"
                 ))))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("La contraseña actual no es correcta"));
+            .andExpect(jsonPath("$.message").value("La contrasena actual no es correcta"));
 
         mockMvc.perform(post("/api/profile/change-password")
                 .header("Authorization", bearerFor(user))
@@ -97,7 +97,7 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
                     "confirmPassword", "new-secret"
                 ))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.message").value("Contraseña actualizada"));
+            .andExpect(jsonPath("$.message").value("Contrasena actualizada"));
 
         mockMvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)

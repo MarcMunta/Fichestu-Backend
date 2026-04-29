@@ -48,7 +48,9 @@ public class ProfileService {
 
         String normalizedUsername = request.getUsername().trim();
         String normalizedEmail = request.getEmail().trim().toLowerCase();
-        String profilePicUrl = normalizeProfilePicUrl(request.getProfilePicUrl());
+        String profilePicUrl = request.getProfilePicUrl() == null
+            ? user.getProfilePicUrl()
+            : normalizeProfilePicUrl(request.getProfilePicUrl());
 
         if (normalizedUsername.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El username es obligatorio");
@@ -78,26 +80,28 @@ public class ProfileService {
         String newPassword = request.getNewPassword();
         String confirm = request.getConfirmPassword();
 
-        if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La cuenta no tiene una contraseña local configurada");
-        }
-
-        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La contraseña actual no es correcta");
+        boolean hasLocalPassword = user.getPasswordHash() != null && !user.getPasswordHash().isBlank();
+        if (hasLocalPassword) {
+            if (currentPassword == null || currentPassword.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Introduce la contrasena actual");
+            }
+            if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La contrasena actual no es correcta");
+            }
         }
 
         if (!newPassword.equals(confirm)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Las contraseñas no coinciden");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Las contrasenas no coinciden");
         }
 
         if (newPassword.length() < 6) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La contraseña debe tener al menos 6 caracteres");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La contrasena debe tener al menos 6 caracteres");
         }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
-        return new GenericResponse("Contraseña actualizada", true);
+        return new GenericResponse(hasLocalPassword ? "Contrasena actualizada" : "Contrasena local creada", true);
     }
 
     @Transactional

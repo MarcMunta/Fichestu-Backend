@@ -59,7 +59,6 @@ public final class ProfileDtos {
     }
 
     public static class ChangePasswordRequest {
-        @NotBlank
         private String currentPassword;
 
         @NotBlank
