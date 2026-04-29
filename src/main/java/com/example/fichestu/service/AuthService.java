@@ -46,6 +46,7 @@ public class AuthService {
     private final SecureRandom secureRandom = new SecureRandom();
     private final String googleClientIdWeb = "376595931736-ts5451g69bk8rd6re82o6ln1p28m4i2l.apps.googleusercontent.com";
     private final String googleClientIdAndroid = "376595931736-6oski1i5s8h2dlepv04hhf3upq49jp51.apps.googleusercontent.com";
+    private final String googleClientIdSharedDebug = "376595931736-vooam8kfuqrv1u63tcao1hm9hq56noo5.apps.googleusercontent.com";
 
     @Value("${app.password-reset.expiration-minutes:15}")
     private long passwordResetExpirationMinutes;
@@ -115,7 +116,7 @@ public class AuthService {
                 new NetHttpTransport(),
                 new GsonFactory()
             )
-                .setAudience(Arrays.asList(googleClientIdWeb, googleClientIdAndroid))
+                .setAudience(Arrays.asList(googleClientIdWeb, googleClientIdAndroid, googleClientIdSharedDebug))
                 .build();
 
             GoogleIdToken idToken = verifier.verify(idTokenString);
