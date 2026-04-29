@@ -14,7 +14,7 @@ Backend en Java + Spring Boot para Fichestu.
 - Windows: `./mvnw.cmd spring-boot:run`
 - Tests: `./mvnw.cmd test`
 
-## Ejecutar con Docker (backend + MySQL)
+## Ejecutar con Docker (backend + MySQL + phpMyAdmin)
 
 Desde la raiz del repo:
 
@@ -25,6 +25,7 @@ Servicios:
 
 - Backend: `http://localhost:8081`
 - MySQL: `localhost:3306` (db: `fichestu_db`, user: `root`, pass: `root`)
+- phpMyAdmin: `http://localhost:8080` (server: `db`, user: `root`, pass: `root`)
 
 Parar servicios:
 
@@ -59,6 +60,7 @@ Tambien incluye seed inicial de tokens y usuarios (`SuperAdmin`, `Jugador1`).
 No edites migraciones ya aplicadas en entornos con datos.
 Para cambios de BBDD, agrega un nuevo archivo:
 
+- `src/main/resources/db/migration/V1__...sql`
 - `src/main/resources/db/migration/V2__...sql`
 - `src/main/resources/db/migration/V3__...sql`
 

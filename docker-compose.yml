@@ -7,7 +7,7 @@ services:
       MYSQL_DATABASE: fichestu_db
       MYSQL_ROOT_PASSWORD: root
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -22,6 +22,8 @@ services:
       dockerfile: Dockerfile
     container_name: fichestu-backend
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       db:
         condition: service_healthy
@@ -31,11 +33,26 @@ services:
       DB_PASSWORD: root
       HIBERNATE_DDL_AUTO: validate
     ports:
-      - "8081:8080"
+      - "8080:8080"
     develop:
       watch:
         - action: rebuild
           path: .
+
+  phpmyadmin:
+    image: phpmyadmin:5-apache
+    container_name: fichestu-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: root
+    ports:
+      - "8082:80"
 
 volumes:
   mysql_data:

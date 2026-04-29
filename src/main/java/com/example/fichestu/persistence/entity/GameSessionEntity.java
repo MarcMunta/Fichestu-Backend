@@ -34,6 +34,12 @@ public class GameSessionEntity {
     @JoinColumn(name = "winner_id")
     private UserEntity winner;
 
+    @Column(name = "winner_token_alias", length = 20)
+    private String winnerTokenAlias;
+
+    @Column(name = "impact_applied", nullable = false)
+    private Boolean impactApplied = Boolean.FALSE;
+
     @PrePersist
     public void prePersist() {
         if (status == null || status.isBlank()) {
@@ -41,6 +47,9 @@ public class GameSessionEntity {
         }
         if (startTime == null) {
             startTime = Instant.now();
+        }
+        if (impactApplied == null) {
+            impactApplied = Boolean.FALSE;
         }
     }
 
@@ -82,5 +91,21 @@ public class GameSessionEntity {
 
     public void setWinner(UserEntity winner) {
         this.winner = winner;
+    }
+
+    public String getWinnerTokenAlias() {
+        return winnerTokenAlias;
+    }
+
+    public void setWinnerTokenAlias(String winnerTokenAlias) {
+        this.winnerTokenAlias = winnerTokenAlias;
+    }
+
+    public Boolean getImpactApplied() {
+        return impactApplied;
+    }
+
+    public void setImpactApplied(Boolean impactApplied) {
+        this.impactApplied = impactApplied;
     }
 }

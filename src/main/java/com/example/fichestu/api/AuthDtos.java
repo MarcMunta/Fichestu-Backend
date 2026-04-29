@@ -3,6 +3,7 @@ package com.example.fichestu.api;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public final class AuthDtos {
 
@@ -11,6 +12,7 @@ public final class AuthDtos {
 
     public static class RegisterRequest {
         @NotBlank
+        @Size(max = 50)
         @JsonAlias({"displayName", "name"})
         private String username;
 
@@ -76,5 +78,85 @@ public final class AuthDtos {
         String message,
         Boolean success
     ) {
+    }
+
+    public static class GoogleRequest {
+        @NotBlank
+        private String idToken;
+
+        public String getIdToken() { return idToken; }
+
+        public void setIdToken(String idToken) { this.idToken = idToken; }
+    }
+
+    public record SessionResponse(
+        String message,
+        Boolean success,
+        Integer userId,
+        String username,
+        String email,
+        String role
+    ) {
+    }
+
+    public static class PasswordResetRequest {
+        @NotBlank
+        @Email
+        private String email;
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+    }
+
+    public static class PasswordResetConfirmRequest {
+        @NotBlank
+        @Email
+        private String email;
+
+        @NotBlank
+        private String token;
+
+        @NotBlank
+        private String newPassword;
+
+        @NotBlank
+        private String confirmPassword;
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+
+        public String getToken() {
+            return token;
+        }
+
+        public void setToken(String token) {
+            this.token = token;
+        }
+
+        public String getNewPassword() {
+            return newPassword;
+        }
+
+        public void setNewPassword(String newPassword) {
+            this.newPassword = newPassword;
+        }
+
+        public String getConfirmPassword() {
+            return confirmPassword;
+        }
+
+        public void setConfirmPassword(String confirmPassword) {
+            this.confirmPassword = confirmPassword;
+        }
     }
 }
