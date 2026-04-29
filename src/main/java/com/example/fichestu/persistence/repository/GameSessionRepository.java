@@ -1,12 +1,15 @@
 package com.example.fichestu.persistence.repository;
 
-import com.example.fichestu.persistence.entity.GameSessionEntity;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.data.jpa.repository.Lock;
+
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import com.example.fichestu.persistence.entity.GameSessionEntity;
+
 import jakarta.persistence.LockModeType;
 
 public interface GameSessionRepository extends JpaRepository<GameSessionEntity, Integer> {

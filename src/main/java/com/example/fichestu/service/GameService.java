@@ -1,5 +1,24 @@
 package com.example.fichestu.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
 import com.example.fichestu.api.GameDtos.BallOptionDto;
 import com.example.fichestu.api.GameDtos.BallPlayerDto;
 import com.example.fichestu.api.GameDtos.BallRoomDto;
@@ -37,23 +56,6 @@ import com.example.fichestu.persistence.repository.UserRepository;
 import com.example.fichestu.persistence.repository.UserWalletRepository;
 import com.example.fichestu.security.CurrentUserService;
 import com.example.fichestu.support.RandomProvider;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class GameService {
