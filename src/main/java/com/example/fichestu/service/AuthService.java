@@ -2,9 +2,14 @@ package com.example.fichestu.service;
 
 import com.example.fichestu.api.AuthDtos.AuthResponse;
 import com.example.fichestu.api.AuthDtos.LoginRequest;
+import com.example.fichestu.api.AuthDtos.PasswordResetConfirmRequest;
+import com.example.fichestu.api.AuthDtos.PasswordResetRequest;
 import com.example.fichestu.api.AuthDtos.RegisterRequest;
 import com.example.fichestu.api.AuthDtos.SessionResponse;
+import com.example.fichestu.api.ProfileDtos.GenericResponse;
+import com.example.fichestu.persistence.entity.PasswordResetTokenEntity;
 import com.example.fichestu.persistence.entity.UserEntity;
+import com.example.fichestu.persistence.repository.PasswordResetTokenRepository;
 import com.example.fichestu.persistence.repository.UserRepository;
 import com.example.fichestu.security.CurrentUserService;
 import com.example.fichestu.security.JwtService;
@@ -14,7 +19,12 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import java.math.BigDecimal;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,24 +35,35 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthService {
 
     private static final BigDecimal INITIAL_FIAT_BALANCE = new BigDecimal("100.00");
+    private static final int RESET_TOKEN_BOUND = 1_000_000;
 
     private final UserRepository userRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final CurrentUserService currentUserService;
+    private final PasswordResetMailService passwordResetMailService;
+    private final SecureRandom secureRandom = new SecureRandom();
     private final String googleClientIdWeb = "376595931736-ts5451g69bk8rd6re82o6ln1p28m4i2l.apps.googleusercontent.com";
     private final String googleClientIdAndroid = "376595931736-6oski1i5s8h2dlepv04hhf3upq49jp51.apps.googleusercontent.com";
 
+    @Value("${app.password-reset.expiration-minutes:15}")
+    private long passwordResetExpirationMinutes;
+
     public AuthService(
         UserRepository userRepository,
+        PasswordResetTokenRepository passwordResetTokenRepository,
         BCryptPasswordEncoder passwordEncoder,
         JwtService jwtService,
-        CurrentUserService currentUserService
+        CurrentUserService currentUserService,
+        PasswordResetMailService passwordResetMailService
     ) {
         this.userRepository = userRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.currentUserService = currentUserService;
+        this.passwordResetMailService = passwordResetMailService;
     }
 
     @Transactional
@@ -136,6 +157,72 @@ public class AuthService {
             user.getEmail(),
             user.getRole()
         );
+    }
+
+    @Transactional
+    public GenericResponse requestPasswordReset(PasswordResetRequest request) {
+        String normalizedEmail = normalizeEmail(request.getEmail());
+
+        userRepository.findByEmail(normalizedEmail).ifPresent(user -> {
+            passwordResetTokenRepository.deleteByUser(user);
+
+            String token = String.format("%06d", secureRandom.nextInt(RESET_TOKEN_BOUND));
+            PasswordResetTokenEntity resetToken = new PasswordResetTokenEntity();
+            resetToken.setUser(user);
+            resetToken.setTokenHash(passwordEncoder.encode(token));
+            resetToken.setExpiresAt(Instant.now().plus(Duration.ofMinutes(passwordResetExpirationMinutes)));
+            passwordResetTokenRepository.save(resetToken);
+
+            passwordResetMailService.sendResetToken(user.getEmail(), token, passwordResetExpirationMinutes);
+        });
+
+        return new GenericResponse(
+            "Si el email existe, recibiras instrucciones para restablecer la contrasena",
+            true
+        );
+    }
+
+    @Transactional
+    public GenericResponse confirmPasswordReset(PasswordResetConfirmRequest request) {
+        String normalizedEmail = normalizeEmail(request.getEmail());
+        String token = request.getToken().trim();
+        String newPassword = request.getNewPassword();
+
+        if (!newPassword.equals(request.getConfirmPassword())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Las contrasenas no coinciden");
+        }
+        if (newPassword.length() < 6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La contrasena debe tener al menos 6 caracteres");
+        }
+
+        UserEntity user = userRepository.findByEmail(normalizedEmail)
+            .orElseThrow(this::invalidOrExpiredToken);
+
+        PasswordResetTokenEntity resetToken = findMatchingResetToken(user, token)
+            .orElseThrow(this::invalidOrExpiredToken);
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        resetToken.setUsedAt(Instant.now());
+        userRepository.save(user);
+        passwordResetTokenRepository.save(resetToken);
+
+        return new GenericResponse("Contrasena actualizada correctamente", true);
+    }
+
+    private Optional<PasswordResetTokenEntity> findMatchingResetToken(UserEntity user, String rawToken) {
+        return passwordResetTokenRepository
+            .findByUserAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(user, Instant.now())
+            .stream()
+            .filter(candidate -> passwordEncoder.matches(rawToken, candidate.getTokenHash()))
+            .findFirst();
+    }
+
+    private ResponseStatusException invalidOrExpiredToken() {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token invalido o caducado");
+    }
+
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase();
     }
 
     private String resolveAvailableUsername(String baseCandidate) {
