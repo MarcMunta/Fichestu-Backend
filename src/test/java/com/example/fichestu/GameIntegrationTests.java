@@ -139,9 +139,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
-    void joiningSessionUpToPlayerLimitRejectsEleventhPlayer() throws Exception {
+    void joiningSessionUpToPlayerLimitRejectsThirdPlayer() throws Exception {
         createDefaultTokens();
-        List<UserEntity> users = createPlayers(11, new BigDecimal("100.00"));
+        List<UserEntity> users = createPlayers(3, new BigDecimal("100.00"));
 
         String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
                 .header("Authorization", bearerFor(users.get(0))))
@@ -151,22 +151,20 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .getContentAsString();
         int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
 
-        for (int i = 1; i < 10; i++) {
-            mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
-                    .header("Authorization", bearerFor(users.get(i))))
-                .andExpect(status().isOk());
-        }
+        mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
+                .header("Authorization", bearerFor(users.get(1))))
+            .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
-                .header("Authorization", bearerFor(users.get(10))))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("La sala ya esta llena"));
+                .header("Authorization", bearerFor(users.get(2))))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("La sala ya no acepta jugadores"));
     }
 
     @Test
     void duplicateBallSelectionIsRejectedAndHappyPathReachesMarketImpactExactlyOnce() throws Exception {
         createDefaultTokens();
-        List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
+        List<UserEntity> users = createPlayers(2, new BigDecimal("100.00"));
 
         String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
                 .header("Authorization", bearerFor(users.get(0))))
@@ -176,11 +174,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .getContentAsString();
         int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
 
-        for (int i = 1; i < 10; i++) {
-            mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
-                    .header("Authorization", bearerFor(users.get(i))))
-                .andExpect(status().isOk());
-        }
+        mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
+                .header("Authorization", bearerFor(users.get(1))))
+            .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/game/matches/{matchId}/pick-ball", matchId)
                 .header("Authorization", bearerFor(users.get(0)))
@@ -188,20 +184,18 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 .content(objectMapper.writeValueAsString(Map.of("ballId", 1))))
             .andExpect(status().isOk());
 
+            mockMvc.perform(post("/api/game/matches/{matchId}/pick-ball", matchId)
+                    .header("Authorization", bearerFor(users.get(1)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(Map.of("ballId", 1))))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Esa bola ya fue tomada"));
+
         mockMvc.perform(post("/api/game/matches/{matchId}/pick-ball", matchId)
                 .header("Authorization", bearerFor(users.get(1)))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("ballId", 1))))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("Esa bola ya fue tomada"));
-
-        for (int i = 1; i < 10; i++) {
-            mockMvc.perform(post("/api/game/matches/{matchId}/pick-ball", matchId)
-                    .header("Authorization", bearerFor(users.get(i)))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(Map.of("ballId", i + 1))))
-                .andExpect(status().isOk());
-        }
+                .content(objectMapper.writeValueAsString(Map.of("ballId", 2))))
+            .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/game/matches/{matchId}/reveal", matchId)
                 .header("Authorization", bearerFor(users.get(0))))
@@ -216,13 +210,10 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 participant.setCurrentHp(50);
                 participant.setAlive(true);
                 participant.setMultiplierWon(new BigDecimal("2.00"));
-            } else if (i == 1) {
+            } else {
                 participant.setCurrentHp(1);
                 participant.setAlive(true);
                 participant.setMultiplierWon(new BigDecimal("1.10"));
-            } else {
-                participant.setCurrentHp(0);
-                participant.setAlive(false);
             }
         }
         matchParticipantRepository.saveAll(participants);
@@ -237,6 +228,16 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 .content(objectMapper.writeValueAsString(Map.of(
                     "action", "ATTACK",
                     "selectedToken", "FRO"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("Accion guardada. Esperando otros jugadores"));
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/battle/round", matchId)
+                .header("Authorization", bearerFor(users.get(1)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "action", "ATTACK",
+                    "selectedToken", "FAZ"
                 ))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.battle.phase").value("FINISHED"))

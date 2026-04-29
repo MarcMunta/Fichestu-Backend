@@ -156,7 +156,9 @@ public class AuthService {
             user.getUserId(),
             user.getUsername(),
             user.getEmail(),
-            user.getRole()
+            user.getRole(),
+            user.getFiatBalance(),
+            user.getCreatedAt()
         );
     }
 

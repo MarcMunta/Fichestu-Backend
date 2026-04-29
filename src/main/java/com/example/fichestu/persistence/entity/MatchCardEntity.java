@@ -10,9 +10,16 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "match_cards")
+@Table(
+    name = "match_cards",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uq_match_cards_match_owner_round",
+        columnNames = {"match_id", "owner_id", "round_number"}
+    )
+)
 public class MatchCardEntity {
 
     @Id
@@ -37,10 +44,19 @@ public class MatchCardEntity {
     @Column(name = "is_used", nullable = false)
     private Boolean used = Boolean.FALSE;
 
+    @Column(name = "round_number", nullable = false)
+    private Integer roundNumber = 1;
+
+    @Column(name = "selected_token_alias", length = 20)
+    private String selectedTokenAlias;
+
     @PrePersist
     public void prePersist() {
         if (used == null) {
             used = Boolean.FALSE;
+        }
+        if (roundNumber == null) {
+            roundNumber = 1;
         }
     }
 
@@ -90,5 +106,21 @@ public class MatchCardEntity {
 
     public void setUsed(Boolean used) {
         this.used = used;
+    }
+
+    public Integer getRoundNumber() {
+        return roundNumber;
+    }
+
+    public void setRoundNumber(Integer roundNumber) {
+        this.roundNumber = roundNumber;
+    }
+
+    public String getSelectedTokenAlias() {
+        return selectedTokenAlias;
+    }
+
+    public void setSelectedTokenAlias(String selectedTokenAlias) {
+        this.selectedTokenAlias = selectedTokenAlias;
     }
 }

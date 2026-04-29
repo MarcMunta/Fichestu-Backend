@@ -56,8 +56,9 @@ public final class GameDtos {
     }
 
     public static class TradeRequest {
-        @NotBlank
         private String token;
+
+        private Integer tokenId;
 
         @Min(1)
         private Integer quantity = 1;
@@ -68,6 +69,14 @@ public final class GameDtos {
 
         public void setToken(String token) {
             this.token = token;
+        }
+
+        public Integer getTokenId() {
+            return tokenId;
+        }
+
+        public void setTokenId(Integer tokenId) {
+            this.tokenId = tokenId;
         }
 
         public Integer getQuantity() {
@@ -122,6 +131,7 @@ public final class GameDtos {
         String phase,
         String statusMessage,
         Boolean canRevealBattle,
+        Long selectionDeadlineEpochMs,
         List<BallPlayerDto> players,
         List<BallOptionDto> balls
     ) {
@@ -172,6 +182,8 @@ public final class GameDtos {
 
         private String selectedToken;
 
+        private Integer tokenId;
+
         public String getAction() {
             return action;
         }
@@ -180,12 +192,28 @@ public final class GameDtos {
             this.action = action;
         }
 
+        public String getCardType() {
+            return action;
+        }
+
+        public void setCardType(String cardType) {
+            this.action = cardType;
+        }
+
         public String getSelectedToken() {
             return selectedToken;
         }
 
         public void setSelectedToken(String selectedToken) {
             this.selectedToken = selectedToken;
+        }
+
+        public Integer getTokenId() {
+            return tokenId;
+        }
+
+        public void setTokenId(Integer tokenId) {
+            this.tokenId = tokenId;
         }
     }
 

@@ -9,10 +9,17 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.MapsId;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "match_participants")
+@Table(
+    name = "match_participants",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uq_match_participants_match_ball",
+        columnNames = {"match_id", "selected_ball_number"}
+    )
+)
 public class MatchParticipantEntity {
 
     @EmbeddedId

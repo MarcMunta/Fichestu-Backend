@@ -46,12 +46,16 @@ public class GameController {
 
     @PostMapping("/market/buy")
     public WalletResponse buy(@Valid @RequestBody TradeRequest request) {
-        return gameService.buy(request.getToken(), request.getQuantity());
+        return request.getTokenId() == null
+            ? gameService.buy(request.getToken(), request.getQuantity())
+            : gameService.buy(request.getTokenId(), request.getQuantity());
     }
 
     @PostMapping("/market/sell")
     public WalletResponse sell(@Valid @RequestBody TradeRequest request) {
-        return gameService.sell(request.getToken(), request.getQuantity());
+        return request.getTokenId() == null
+            ? gameService.sell(request.getToken(), request.getQuantity())
+            : gameService.sell(request.getTokenId(), request.getQuantity());
     }
 
     @PostMapping("/ball-room/enter")

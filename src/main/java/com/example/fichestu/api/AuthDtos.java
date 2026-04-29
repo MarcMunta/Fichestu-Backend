@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
+import java.time.Instant;
 
 public final class AuthDtos {
 
@@ -95,7 +97,9 @@ public final class AuthDtos {
         Integer userId,
         String username,
         String email,
-        String role
+        String role,
+        BigDecimal fiatBalance,
+        Instant createdAt
     ) {
     }
 
