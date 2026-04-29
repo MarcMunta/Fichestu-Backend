@@ -105,13 +105,14 @@ public class AuthService {
             Payload payload = idToken.getPayload();
             String email = payload.getEmail().toLowerCase();
 
+            String picture = (String) payload.get("picture");
             UserEntity user = userRepository.findByEmail(email).orElseGet(() -> {
                 UserEntity newUser = new UserEntity();
                 newUser.setEmail(email);
                 String name = (String) payload.get("name");
                 newUser.setUsername(resolveAvailableUsername(name != null ? name : email.split("@")[0]));
                 newUser.setPasswordHash(null);
-                newUser.setProfilePicUrl((String) payload.get("picture"));
+                newUser.setProfilePicUrl(picture);
                 newUser.setFiatBalance(INITIAL_FIAT_BALANCE);
                 newUser.setRole("USER");
                 return userRepository.save(newUser);
