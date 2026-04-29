@@ -25,4 +25,8 @@ public interface GameSessionRepository extends JpaRepository<GameSessionEntity, 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select g from GameSessionEntity g where g.status in ('WAITING','PICKING','READY_REVEAL') and g.selectionDeadline is not null and g.selectionDeadline <= :now")
     List<GameSessionEntity> findExpiredSelectionRoomsForUpdate(@Param("now") java.time.Instant now);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select g from GameSessionEntity g where g.status in ('REVEALED','IN_PROGRESS') order by g.matchId asc")
+    List<GameSessionEntity> findActiveBattleRoomsForUpdate();
 }

@@ -5,6 +5,7 @@ import com.example.fichestu.persistence.entity.MatchParticipantEntity;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.entity.UserWalletEntity;
 import com.example.fichestu.service.MarketMaintenanceService;
+import com.example.fichestu.service.GameService;
 import com.example.fichestu.support.RandomProvider;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -32,6 +33,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
 
     @Autowired
     private MarketMaintenanceService marketMaintenanceService;
+
+    @Autowired
+    private GameService gameService;
 
     @Autowired
     private TestRandomProvider testRandomProvider;
@@ -139,9 +143,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
-    void joiningSessionUpToPlayerLimitRejectsThirdPlayer() throws Exception {
+    void joiningSessionUpToPlayerLimitRejectsEleventhPlayer() throws Exception {
         createDefaultTokens();
-        List<UserEntity> users = createPlayers(3, new BigDecimal("100.00"));
+        List<UserEntity> users = createPlayers(11, new BigDecimal("100.00"));
 
         String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
                 .header("Authorization", bearerFor(users.get(0))))
@@ -151,14 +155,16 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .getContentAsString();
         int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
 
-        mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
-                .header("Authorization", bearerFor(users.get(1))))
-            .andExpect(status().isOk());
+        for (int i = 1; i < 10; i++) {
+            mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
+                    .header("Authorization", bearerFor(users.get(i))))
+                .andExpect(status().isOk());
+        }
 
         mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
-                .header("Authorization", bearerFor(users.get(2))))
+                .header("Authorization", bearerFor(users.get(10))))
             .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.message").value("La sala ya no acepta jugadores"));
+            .andExpect(jsonPath("$.message").value("La sala ya esta llena"));
     }
 
     @Test
@@ -197,7 +203,12 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 .content(objectMapper.writeValueAsString(Map.of("ballId", 2))))
             .andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/game/matches/{matchId}/reveal", matchId)
+        GameSessionEntity selectionSession = gameSessionRepository.findById(matchId).orElseThrow();
+        selectionSession.setSelectionDeadline(Instant.EPOCH);
+        gameSessionRepository.save(selectionSession);
+        gameService.processSelectionDeadlines();
+
+        mockMvc.perform(get("/api/game/match/state")
                 .header("Authorization", bearerFor(users.get(0))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.battle.phase").value("READY"));
@@ -210,10 +221,14 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 participant.setCurrentHp(50);
                 participant.setAlive(true);
                 participant.setMultiplierWon(new BigDecimal("2.00"));
-            } else {
+            } else if (participant.getUser().getUserId().equals(users.get(1).getUserId())) {
                 participant.setCurrentHp(1);
                 participant.setAlive(true);
                 participant.setMultiplierWon(new BigDecimal("1.10"));
+            } else {
+                participant.setCurrentHp(0);
+                participant.setAlive(false);
+                participant.setMultiplierWon(new BigDecimal("1.00"));
             }
         }
         matchParticipantRepository.saveAll(participants);
