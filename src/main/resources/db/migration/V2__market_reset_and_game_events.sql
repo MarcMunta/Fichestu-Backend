@@ -1,8 +1,8 @@
 ALTER TABLE game_sessions
-    ADD COLUMN IF NOT EXISTS winner_token_alias VARCHAR(20) NULL;
+    ADD COLUMN winner_token_alias VARCHAR(20) NULL;
 
 ALTER TABLE game_sessions
-    ADD COLUMN IF NOT EXISTS impact_applied BOOLEAN NOT NULL DEFAULT FALSE;
+    ADD COLUMN impact_applied BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS market_reset_audit (
     reset_id INT AUTO_INCREMENT PRIMARY KEY,
