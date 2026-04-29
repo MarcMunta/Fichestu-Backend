@@ -1,0 +1,53 @@
+package com.example.fichestu.api;
+
+import com.example.fichestu.api.ProfileDtos.ChangePasswordRequest;
+import com.example.fichestu.api.ProfileDtos.BadgeListResponse;
+import com.example.fichestu.api.ProfileDtos.GenericResponse;
+import com.example.fichestu.api.ProfileDtos.ProfileResponse;
+import com.example.fichestu.api.ProfileDtos.StatsResponse;
+import com.example.fichestu.api.ProfileDtos.UpdateProfileRequest;
+import com.example.fichestu.service.ProfileService;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/profile")
+public class ProfileController {
+
+    private final ProfileService profileService;
+
+    public ProfileController(ProfileService profileService) {
+        this.profileService = profileService;
+    }
+
+    @GetMapping
+    public ProfileResponse getProfile() {
+        return profileService.getProfile();
+    }
+
+    @GetMapping("/badges")
+    public BadgeListResponse getBadges() {
+        return profileService.getBadges();
+    }
+
+    @GetMapping("/stats")
+    public StatsResponse getStats() {
+        return profileService.getStats();
+    }
+
+    @PutMapping
+    public ProfileResponse updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
+        return profileService.updateProfile(request);
+    }
+
+    @PostMapping("/change-password")
+    public GenericResponse changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        return profileService.changePassword(request);
+    }
+}
