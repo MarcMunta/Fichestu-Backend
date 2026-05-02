@@ -215,7 +215,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
             if (participant.getUser().getUserId().equals(users.get(0).getUserId())) {
                 participant.setCurrentHp(50);
                 participant.setAlive(true);
-                participant.setMultiplierWon(new BigDecimal("2.00"));
+                participant.setMultiplierWon(new BigDecimal("4.00"));
             } else if (i == 1) {
                 participant.setCurrentHp(1);
                 participant.setAlive(true);
@@ -246,7 +246,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
         assertThat(finishedSession.getImpactApplied()).isTrue();
         assertThat(finishedSession.getWinnerTokenAlias()).isEqualTo("FRO");
         assertThat(findTokenByName("Ficha Roja").getCurrentPrice())
-            .isEqualByComparingTo(oldPrice.multiply(new BigDecimal("2.00")));
+            .isEqualByComparingTo(oldPrice.multiply(new BigDecimal("3.00")));
 
         mockMvc.perform(post("/api/game/matches/{matchId}/winner-impact", matchId)
                 .header("Authorization", bearerFor(users.get(0)))
