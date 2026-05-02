@@ -9,6 +9,7 @@ import com.example.fichestu.persistence.repository.GameSessionRepository;
 import com.example.fichestu.persistence.repository.MarketResetAuditRepository;
 import com.example.fichestu.persistence.repository.MatchCardRepository;
 import com.example.fichestu.persistence.repository.MatchParticipantRepository;
+import com.example.fichestu.persistence.repository.NotificationRepository;
 import com.example.fichestu.persistence.repository.PasswordResetTokenRepository;
 import com.example.fichestu.persistence.repository.TokenPriceHistoryRepository;
 import com.example.fichestu.persistence.repository.TokenRepository;
@@ -84,6 +85,9 @@ abstract class IntegrationTestSupport {
     @Autowired
     protected PasswordResetTokenRepository passwordResetTokenRepository;
 
+    @Autowired
+    protected NotificationRepository notificationRepository;
+
     @BeforeEach
     void cleanDatabase() {
         gameSessionEventRepository.deleteAll();
@@ -98,6 +102,7 @@ abstract class IntegrationTestSupport {
         tokenRepository.deleteAll();
         marketResetAuditRepository.deleteAll();
         passwordResetTokenRepository.deleteAll();
+        notificationRepository.deleteAll();
         userRepository.deleteAll();
     }
 
