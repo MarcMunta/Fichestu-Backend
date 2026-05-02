@@ -64,6 +64,21 @@ public class GameController {
         return gameService.joinMatch(matchId);
     }
 
+    @PostMapping("/matches/{matchId}/matchmaking/cancel")
+    public EnterBallRoomResponse cancelMatchmaking(@PathVariable Integer matchId) {
+        return gameService.cancelMatchmaking(matchId);
+    }
+
+    @PostMapping("/matches/{matchId}/matchmaking/abandon")
+    public EnterBallRoomResponse abandonMatchmaking(@PathVariable Integer matchId) {
+        return gameService.abandonMatchmaking(matchId);
+    }
+
+    @PostMapping("/matches/{matchId}/abandon")
+    public EnterBallRoomResponse abandonMatch(@PathVariable Integer matchId) {
+        return gameService.abandonMatch(matchId);
+    }
+
     @PostMapping("/matches/{matchId}/pick-ball")
     public MatchStateResponse pickBall(
         @PathVariable Integer matchId,

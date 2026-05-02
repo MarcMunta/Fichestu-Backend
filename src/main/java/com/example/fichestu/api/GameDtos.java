@@ -122,9 +122,21 @@ public final class GameDtos {
         String phase,
         String statusMessage,
         Boolean canRevealBattle,
+        Long selectionDeadlineEpochMs,
+        Long serverNowEpochMs,
         List<BallPlayerDto> players,
         List<BallOptionDto> balls
     ) {
+        public BallRoomDto(
+            String phase,
+            String statusMessage,
+            Boolean canRevealBattle,
+            Long selectionDeadlineEpochMs,
+            List<BallPlayerDto> players,
+            List<BallOptionDto> balls
+        ) {
+            this(phase, statusMessage, canRevealBattle, selectionDeadlineEpochMs, Instant.now().toEpochMilli(), players, balls);
+        }
     }
 
     public record BallPlayerDto(

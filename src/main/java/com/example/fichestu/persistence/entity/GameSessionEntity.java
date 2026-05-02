@@ -30,6 +30,9 @@ public class GameSessionEntity {
     @Column(name = "end_time")
     private Instant endTime;
 
+    @Column(name = "matchmaking_deadline")
+    private Instant matchmakingDeadline;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "winner_id")
     private UserEntity winner;
@@ -83,6 +86,14 @@ public class GameSessionEntity {
 
     public void setEndTime(Instant endTime) {
         this.endTime = endTime;
+    }
+
+    public Instant getMatchmakingDeadline() {
+        return matchmakingDeadline;
+    }
+
+    public void setMatchmakingDeadline(Instant matchmakingDeadline) {
+        this.matchmakingDeadline = matchmakingDeadline;
     }
 
     public UserEntity getWinner() {

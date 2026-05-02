@@ -59,11 +59,18 @@ public class GameService {
 
     private static final BigDecimal BALL_ENTRY_COST = new BigDecimal("10.00");
     private static final BigDecimal REWARDED_AMOUNT = new BigDecimal("25.00");
+    private static final BigDecimal MIN_TOKEN_PRICE = new BigDecimal("0.50");
+    private static final BigDecimal MAX_TOKEN_PRICE = new BigDecimal("5000.00");
+    private static final BigDecimal MAX_MARKET_IMPACT_MULTIPLIER = new BigDecimal("3.00");
     private static final int ROOM_SIZE = 10;
     private static final int BALL_COUNT = 50;
     private static final int INITIAL_HP = 50;
+    private static final int MATCHMAKING_SECONDS = 15;
     private static final String TYPE_REWARDED = "REWARDED";
     private static final String EVENT_ROUND_SUMMARY = "ROUND_SUMMARY";
+    private static final String STATUS_MATCHMAKING = "MATCHMAKING";
+    private static final String STATUS_PICKING = "PICKING";
+    private static final String STATUS_CLOSED = "CLOSED";
 
     private final CurrentUserService currentUserService;
     private final PlayerProfileReadService playerProfileReadService;
@@ -78,6 +85,7 @@ public class GameService {
     private final MatchCardRepository matchCardRepository;
     private final GameSessionEventRepository gameSessionEventRepository;
     private final RandomProvider randomProvider;
+    private final NotificationService notificationService;
 
     public GameService(
         CurrentUserService currentUserService,
@@ -92,7 +100,8 @@ public class GameService {
         MatchParticipantRepository matchParticipantRepository,
         MatchCardRepository matchCardRepository,
         GameSessionEventRepository gameSessionEventRepository,
-        RandomProvider randomProvider
+        RandomProvider randomProvider,
+        NotificationService notificationService
     ) {
         this.currentUserService = currentUserService;
         this.playerProfileReadService = playerProfileReadService;
@@ -107,6 +116,7 @@ public class GameService {
         this.matchCardRepository = matchCardRepository;
         this.gameSessionEventRepository = gameSessionEventRepository;
         this.randomProvider = randomProvider;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -166,28 +176,33 @@ public class GameService {
 
         Optional<GameSessionEntity> currentSession = findCurrentSession(user.getUserId());
         if (currentSession.isPresent()) {
-            GameSessionEntity session = currentSession.get();
-            return new EnterBallRoomResponse(
-                "Ya tienes una partida activa",
-                true,
-                session.getMatchId(),
-                user.getFiatBalance(),
-                buildBallRoomDto(session, user.getUserId())
-            );
+            abandonSessionForReentry(user, currentSession.get());
+        }
+
+        Optional<GameSessionEntity> availableSession = findAvailableMatchmakingSession();
+        if (availableSession.isPresent()) {
+            return joinAvailableMatchmakingSession(user, availableSession.get().getMatchId());
         }
 
         ensureSufficientBalance(user, "entrar en la sala");
         debitBallEntry(user);
 
         GameSessionEntity session = new GameSessionEntity();
-        session.setStatus("WAITING");
+        session.setStatus(STATUS_MATCHMAKING);
+        session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
         session = gameSessionRepository.save(session);
 
         createParticipant(session, user);
-        logEvent(session, "ROOM_CREATED", user.getUsername() + " ha creado la sala.");
+        logEvent(session, "MATCHMAKING_STARTED", user.getUsername() + " ha pagado la entrada y entra en matchmaking.");
+        notificationService.create(
+            user,
+            "Matchmaking iniciado",
+            "Entrada pagada. Buscando jugadores para la sala de bolas.",
+            "MATCHMAKING"
+        );
 
         return new EnterBallRoomResponse(
-            "Sala creada. Esperando jugadores",
+            "Entrada pagada. Buscando jugadores",
             true,
             session.getMatchId(),
             user.getFiatBalance(),
@@ -206,6 +221,7 @@ public class GameService {
             if (!existing.getMatchId().equals(matchId)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ya tienes una partida activa");
             }
+            resolveMatchmakingIfReady(existing);
             return new EnterBallRoomResponse(
                 "Ya perteneces a esta sala",
                 true,
@@ -217,12 +233,13 @@ public class GameService {
 
         GameSessionEntity session = gameSessionRepository.findByMatchIdForUpdate(matchId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match no encontrado"));
+        resolveMatchmakingIfReady(session);
 
         long currentPlayers = matchParticipantRepository.countByIdMatchId(matchId);
         if (currentPlayers >= ROOM_SIZE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La sala ya esta llena");
         }
-        if (!"WAITING".equalsIgnoreCase(session.getStatus())) {
+        if (!STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La sala ya no acepta jugadores");
         }
 
@@ -231,12 +248,18 @@ public class GameService {
         createParticipant(session, user);
 
         long newCount = matchParticipantRepository.countByIdMatchId(matchId);
+        logEvent(session, "PLAYER_JOINED", user.getUsername() + " se ha unido al matchmaking.");
+        notificationService.create(
+            user,
+            "Te has unido a la sala",
+            "Entrada pagada. Esperando que el matchmaking termine.",
+            "MATCHMAKING"
+        );
         if (newCount >= ROOM_SIZE) {
-            session.setStatus("PICKING");
-            gameSessionRepository.save(session);
-            logEvent(session, "ROOM_FULL", "La sala ya tiene 10 jugadores. Empieza la seleccion de bolas.");
+            resolveMatchmakingIfReady(session);
         } else {
-            logEvent(session, "PLAYER_JOINED", user.getUsername() + " se ha unido a la sala.");
+            session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
+            gameSessionRepository.save(session);
         }
 
         return new EnterBallRoomResponse(
@@ -248,7 +271,130 @@ public class GameService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
+    public EnterBallRoomResponse cancelMatchmaking(Integer matchId) {
+        UserEntity user = currentUserService.requireUserEntity();
+        GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
+
+        if (!STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El matchmaking ya no se puede cancelar");
+        }
+
+        MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
+        matchParticipantRepository.delete(participant);
+        refundBallEntry(user);
+        logEvent(session, "MATCHMAKING_CANCELLED", user.getUsername() + " ha cancelado el matchmaking.");
+        notificationService.create(
+            user,
+            "Matchmaking cancelado",
+            "Matchmaking cancelado",
+            "MATCHMAKING_CANCELLED"
+        );
+        closeIfMatchmakingIsEmpty(session);
+
+        return new EnterBallRoomResponse(
+            "Matchmaking cancelado",
+            true,
+            null,
+            user.getFiatBalance(),
+            new BallRoomDto("WAITING_ENTRY", "Matchmaking cancelado", false, null, List.of(), List.of())
+        );
+    }
+
+    @Transactional
+    public EnterBallRoomResponse abandonMatchmaking(Integer matchId) {
+        UserEntity user = currentUserService.requireUserEntity();
+        GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
+
+        if (!STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+            return new EnterBallRoomResponse(
+                "La sala ya ha avanzado",
+                true,
+                session.getMatchId(),
+                user.getFiatBalance(),
+                buildBallRoomDto(session, user.getUserId())
+            );
+        }
+
+        MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
+        matchParticipantRepository.delete(participant);
+        logEvent(session, "MATCHMAKING_ABANDONED", user.getUsername() + " ha abandonado el matchmaking.");
+        closeIfMatchmakingIsEmpty(session);
+
+        return new EnterBallRoomResponse(
+            "Has abandonado el matchmaking",
+            true,
+            null,
+            user.getFiatBalance(),
+            new BallRoomDto("WAITING_ENTRY", "Has abandonado la sala. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
+        );
+    }
+
+    @Transactional
+    public EnterBallRoomResponse abandonMatch(Integer matchId) {
+        UserEntity user = currentUserService.requireUserEntity();
+        GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
+
+        if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
+            return new EnterBallRoomResponse(
+                "La partida ya estaba cerrada",
+                true,
+                null,
+                user.getFiatBalance(),
+                new BallRoomDto("WAITING_ENTRY", "No hay partida activa.", false, null, List.of(), List.of())
+            );
+        }
+
+        MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
+
+        if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+            matchParticipantRepository.delete(participant);
+            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado el matchmaking.");
+            closeIfMatchmakingIsEmpty(session);
+            return new EnterBallRoomResponse(
+                "Has abandonado la sala",
+                true,
+                null,
+                user.getFiatBalance(),
+                new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
+            );
+        }
+
+        UserEntity bot = findReplacementBotUser(session);
+        MatchParticipantEntity replacement = new MatchParticipantEntity();
+        replacement.setId(new MatchParticipantId(matchId, bot.getUserId()));
+        replacement.setMatch(session);
+        replacement.setUser(bot);
+        replacement.setSelectedBallNumber(participant.getSelectedBallNumber());
+        replacement.setMultiplierWon(participant.getMultiplierWon());
+        replacement.setCurrentHp(participant.getCurrentHp());
+        replacement.setAlive(participant.getAlive());
+
+        matchParticipantRepository.delete(participant);
+        matchParticipantRepository.save(replacement);
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        if (STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
+            assignBotBallPicks(session, participants);
+            if (matchParticipantRepository.countByIdMatchIdAndSelectedBallNumberIsNotNull(matchId) >= ROOM_SIZE) {
+                session.setStatus("READY_REVEAL");
+                gameSessionRepository.save(session);
+            }
+        }
+        logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha salido. Un bot ocupa su plaza.");
+
+        return new EnterBallRoomResponse(
+            "Has salido de la partida",
+            true,
+            null,
+            user.getFiatBalance(),
+            new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
+        );
+    }
+
+    @Transactional
     public MatchStateResponse currentMatchState() {
         UserEntity user = currentUserService.requireUserEntity();
         Optional<GameSessionEntity> sessionOptional = findCurrentSession(user.getUserId());
@@ -258,12 +404,13 @@ public class GameService {
                 "No hay match activo",
                 true,
                 null,
-                new BallRoomDto("WAITING_ENTRY", "Crea o unete a una sala para empezar.", false, List.of(), List.of()),
+                new BallRoomDto("WAITING_ENTRY", "Crea o unete a una sala para empezar.", false, null, List.of(), List.of()),
                 new BattleDto("LOCKED", 0, null, null, null, "ATTACK", true, List.of("Todavia no hay partida activa."), List.of())
             );
         }
 
         GameSessionEntity session = sessionOptional.get();
+        resolveMatchmakingIfReady(session);
         return buildMatchStateResponse(session, user.getUserId(), "Estado del match cargado", null);
     }
 
@@ -271,8 +418,9 @@ public class GameService {
     public MatchStateResponse pickBall(Integer matchId, Integer ballId) {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
+        resolveMatchmakingIfReady(session);
 
-        if (!"PICKING".equalsIgnoreCase(session.getStatus())) {
+        if (!STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La sala no esta en fase de seleccion");
         }
 
@@ -302,6 +450,12 @@ public class GameService {
         me.setSelectedBallNumber(ballId);
         matchParticipantRepository.save(me);
         logEvent(session, "BALL_PICKED", user.getUsername() + " ha elegido la bola " + ballId + ".");
+        notificationService.create(
+            user,
+            "Bola confirmada",
+            "Has elegido la bola " + ballId + ".",
+            "BALL_PICKED"
+        );
 
         long pickedCount = matchParticipantRepository.countByIdMatchIdAndSelectedBallNumberIsNotNull(matchId);
         if (pickedCount == ROOM_SIZE) {
@@ -317,6 +471,7 @@ public class GameService {
     public MatchStateResponse revealMultipliers(Integer matchId) {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
+        resolveMatchmakingIfReady(session);
 
         if (!"READY_REVEAL".equalsIgnoreCase(session.getStatus()) && !"REVEALED".equalsIgnoreCase(session.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Aun no se puede revelar");
@@ -330,6 +485,12 @@ public class GameService {
             session.setStatus("REVEALED");
             gameSessionRepository.save(session);
             logEvent(session, "MULTIPLIERS_REVEALED", "Los multiplicadores ya son visibles para todos los jugadores.");
+            notificationService.create(
+                user,
+                "Multiplicadores revelados",
+                "Ya puedes pasar al Battle Royale.",
+                "BALL_REVEAL"
+            );
         }
 
         return buildMatchStateResponse(session, user.getUserId(), "Multiplicadores revelados", null);
@@ -438,13 +599,25 @@ public class GameService {
 
             if (winner != null) {
                 logEvent(session, "WINNER", "Ganador: " + winner.getUser().getUsername() + " con x" + formatMultiplier(winner.getMultiplierWon().doubleValue()) + ".");
-                if (winner.getUser().getUserId().equals(user.getUserId()) && selectedTokenAlias != null && !selectedTokenAlias.isBlank()) {
-                    applyWinnerImpactInternal(session, selectedTokenAlias, winner.getMultiplierWon(), user);
+                notificationService.create(
+                    user,
+                    "Battle finalizada",
+                    "Ganador: " + winner.getUser().getUsername() + " con x" + formatMultiplier(winner.getMultiplierWon().doubleValue()) + ".",
+                    winner.getUser().getUserId().equals(user.getUserId()) ? "BATTLE_WIN" : "BATTLE_FINISHED"
+                );
+                if (selectedTokenAlias != null && !selectedTokenAlias.isBlank()) {
+                    applyWinnerImpactInternal(session, selectedTokenAlias, winner.getMultiplierWon(), winner.getUser());
                 } else if (!Boolean.TRUE.equals(session.getImpactApplied())) {
                     logEvent(session, "WINNER_PENDING_IMPACT", "El ganador aun no ha elegido la ficha a impactar.");
                 }
             } else {
                 logEvent(session, "DRAW", "La partida termina en empate.");
+                notificationService.create(
+                    user,
+                    "Battle finalizada",
+                    "La partida termina en empate.",
+                    "BATTLE_FINISHED"
+                );
             }
         }
 
@@ -483,10 +656,6 @@ public class GameService {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
 
-        if ("FINISHED".equalsIgnoreCase(session.getStatus()) && session.getWinner() != null && !Boolean.TRUE.equals(session.getImpactApplied())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Aplica primero el impacto del ganador");
-        }
-
         if (!"CLOSED".equalsIgnoreCase(session.getStatus())) {
             session.setStatus("CLOSED");
             session.setEndTime(Instant.now());
@@ -508,6 +677,12 @@ public class GameService {
         user.setFiatBalance(user.getFiatBalance().add(REWARDED_AMOUNT).setScale(2, RoundingMode.HALF_UP));
         userRepository.save(user);
         logTransaction(user, TYPE_REWARDED, REWARDED_AMOUNT, "Rewarded ad completado");
+        notificationService.create(
+            user,
+            "Rewarded aplicado",
+            "Has recibido " + REWARDED_AMOUNT + " FTC en tu saldo.",
+            "REWARDED"
+        );
 
         return new CooldownResponse(
             "Rewarded aplicado",
@@ -538,6 +713,12 @@ public class GameService {
             user.setFiatBalance(user.getFiatBalance().subtract(amount).setScale(2, RoundingMode.HALF_UP));
             wallet.setQuantity(wallet.getQuantity().add(qty));
             logTransaction(user, "BUY", amount.negate(), "Compra de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
+            notificationService.create(
+                user,
+                "Compra realizada",
+                "Has comprado " + quantity + " " + token.getName() + " por " + amount + " FTC.",
+                "MARKET_BUY"
+            );
         } else {
             if (wallet.getQuantity().compareTo(qty) < 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No tienes suficientes fichas para vender");
@@ -545,6 +726,12 @@ public class GameService {
             wallet.setQuantity(wallet.getQuantity().subtract(qty));
             user.setFiatBalance(user.getFiatBalance().add(amount).setScale(2, RoundingMode.HALF_UP));
             logTransaction(user, "SELL", amount, "Venta de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
+            notificationService.create(
+                user,
+                "Venta realizada",
+                "Has vendido " + quantity + " " + token.getName() + " por " + amount + " FTC.",
+                "MARKET_SELL"
+            );
         }
 
         userRepository.save(user);
@@ -567,9 +754,13 @@ public class GameService {
         UserEntity triggeredBy
     ) {
         TokenEntity token = resolveToken(tokenAlias);
-        BigDecimal nextPrice = token.getCurrentPrice().multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
-        if (nextPrice.compareTo(new BigDecimal("0.50")) < 0) {
-            nextPrice = new BigDecimal("0.50");
+        BigDecimal marketMultiplier = multiplier.min(MAX_MARKET_IMPACT_MULTIPLIER);
+        BigDecimal nextPrice = token.getCurrentPrice().multiply(marketMultiplier).setScale(2, RoundingMode.HALF_UP);
+        if (nextPrice.compareTo(MIN_TOKEN_PRICE) < 0) {
+            nextPrice = MIN_TOKEN_PRICE;
+        }
+        if (nextPrice.compareTo(MAX_TOKEN_PRICE) > 0) {
+            nextPrice = MAX_TOKEN_PRICE;
         }
 
         token.setCurrentPrice(nextPrice);
@@ -585,7 +776,7 @@ public class GameService {
         session.setImpactApplied(true);
         gameSessionRepository.save(session);
 
-        logEvent(session, "WINNER_IMPACT", triggeredBy.getUsername() + " aplica x" + formatMultiplier(multiplier.doubleValue()) + " sobre " + token.getName() + ".");
+        logEvent(session, "WINNER_IMPACT", triggeredBy.getUsername() + " aplica x" + formatMultiplier(marketMultiplier.doubleValue()) + " sobre " + token.getName() + ".");
     }
 
     private MatchStateResponse buildMatchStateResponse(
@@ -645,14 +836,20 @@ public class GameService {
 
         String phase;
         String statusMessage;
-        if ("WAITING".equalsIgnoreCase(session.getStatus())) {
+        if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+            phase = "MATCHMAKING";
+            statusMessage = "Buscando jugadores: " + participants.size() + "/" + ROOM_SIZE + ".";
+        } else if ("WAITING".equalsIgnoreCase(session.getStatus())) {
             phase = "WAITING_PLAYERS";
             statusMessage = "Esperando jugadores: " + participants.size() + "/" + ROOM_SIZE + ".";
-        } else if ("PICKING".equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
+        } else if (STATUS_PICKING.equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
+            long pickedCount = participants.stream()
+                .filter(participant -> participant.getSelectedBallNumber() != null)
+                .count();
             phase = "PICKING";
             statusMessage = canReveal
                 ? "Todos eligieron. Revela multiplicadores para iniciar Battle Royale."
-                : "Elige una bola unica. " + participants.size() + "/" + ROOM_SIZE + " jugadores listos.";
+                : "Elige una bola unica. " + pickedCount + "/" + ROOM_SIZE + " jugadores listos.";
         } else if (isMultiplierVisible(session.getStatus())) {
             phase = "REVEALED";
             Optional<MatchParticipantEntity> me = participants.stream()
@@ -665,7 +862,8 @@ public class GameService {
             statusMessage = "Crea o unete a una sala para empezar.";
         }
 
-        return new BallRoomDto(phase, statusMessage, canReveal, players, balls);
+        Long deadlineEpochMs = session.getMatchmakingDeadline() == null ? null : session.getMatchmakingDeadline().toEpochMilli();
+        return new BallRoomDto(phase, statusMessage, canReveal, deadlineEpochMs, players, balls);
     }
 
     private BattleDto buildBattleDto(GameSessionEntity session, Integer userId, String selectedAction) {
@@ -781,10 +979,57 @@ public class GameService {
 
     private Optional<GameSessionEntity> findCurrentSession(Integer userId) {
         return matchParticipantRepository.findByIdUserId(userId).stream()
+            .filter(participant -> {
+                GameSessionEntity match = participant.getMatch();
+                if (match == null || STATUS_CLOSED.equalsIgnoreCase(match.getStatus())) {
+                    return false;
+                }
+                boolean battleAlreadyStarted = "IN_PROGRESS".equalsIgnoreCase(match.getStatus())
+                    || "FINISHED".equalsIgnoreCase(match.getStatus());
+                return !battleAlreadyStarted || Boolean.TRUE.equals(participant.getAlive());
+            })
             .map(MatchParticipantEntity::getMatch)
-            .filter(match -> match != null)
-            .filter(match -> !"CLOSED".equalsIgnoreCase(match.getStatus()))
             .max(Comparator.comparing(GameSessionEntity::getMatchId));
+    }
+
+    private Optional<GameSessionEntity> findAvailableMatchmakingSession() {
+        Instant now = Instant.now();
+        return gameSessionRepository.findByStatusOrderByMatchIdAsc(STATUS_MATCHMAKING).stream()
+            .filter(session -> session.getMatchmakingDeadline() == null || session.getMatchmakingDeadline().isAfter(now))
+            .filter(session -> matchParticipantRepository.countByIdMatchId(session.getMatchId()) < ROOM_SIZE)
+            .findFirst();
+    }
+
+    private EnterBallRoomResponse joinAvailableMatchmakingSession(UserEntity user, Integer matchId) {
+        GameSessionEntity session = gameSessionRepository.findByMatchIdForUpdate(matchId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match no encontrado"));
+        resolveMatchmakingIfReady(session);
+
+        long currentPlayers = matchParticipantRepository.countByIdMatchId(matchId);
+        if (currentPlayers >= ROOM_SIZE || !STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+            return enterBallRoom();
+        }
+
+        ensureSufficientBalance(user, "unirte a la sala");
+        debitBallEntry(user);
+        createParticipant(session, user);
+
+        long newCount = matchParticipantRepository.countByIdMatchId(matchId);
+        logEvent(session, "PLAYER_JOINED", user.getUsername() + " se ha unido al matchmaking.");
+        if (newCount >= ROOM_SIZE) {
+            resolveMatchmakingIfReady(session);
+        } else {
+            session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
+            gameSessionRepository.save(session);
+        }
+
+        return new EnterBallRoomResponse(
+            "Te has unido a una sala abierta",
+            true,
+            session.getMatchId(),
+            user.getFiatBalance(),
+            buildBallRoomDto(session, user.getUserId())
+        );
     }
 
     private GameSessionEntity loadSessionOwnedByUser(Integer matchId, Integer userId) {
@@ -795,6 +1040,152 @@ public class GameService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala");
         }
         return session;
+    }
+
+    private void abandonSessionForReentry(UserEntity user, GameSessionEntity session) {
+        if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
+            return;
+        }
+
+        MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(session.getMatchId(), user.getUserId()))
+            .orElse(null);
+        if (participant == null) {
+            return;
+        }
+
+        if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus()) || "WAITING".equalsIgnoreCase(session.getStatus())) {
+            matchParticipantRepository.delete(participant);
+            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado una sala anterior al volver a entrar.");
+            closeIfMatchmakingIsEmpty(session);
+            return;
+        }
+
+        UserEntity bot = findReplacementBotUser(session);
+        MatchParticipantEntity replacement = new MatchParticipantEntity();
+        replacement.setId(new MatchParticipantId(session.getMatchId(), bot.getUserId()));
+        replacement.setMatch(session);
+        replacement.setUser(bot);
+        replacement.setSelectedBallNumber(participant.getSelectedBallNumber());
+        replacement.setMultiplierWon(participant.getMultiplierWon());
+        replacement.setCurrentHp(participant.getCurrentHp());
+        replacement.setAlive(participant.getAlive());
+
+        matchParticipantRepository.delete(participant);
+        matchParticipantRepository.save(replacement);
+
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        if (STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
+            assignBotBallPicks(session, participants);
+            if (matchParticipantRepository.countByIdMatchIdAndSelectedBallNumberIsNotNull(session.getMatchId()) >= ROOM_SIZE) {
+                session.setStatus("READY_REVEAL");
+                gameSessionRepository.save(session);
+            }
+        }
+        logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha vuelto a entrar. Un bot ocupa su plaza anterior.");
+    }
+
+    private void resolveMatchmakingIfReady(GameSessionEntity session) {
+        if ("WAITING".equalsIgnoreCase(session.getStatus())) {
+            session.setStatus(STATUS_MATCHMAKING);
+            if (session.getMatchmakingDeadline() == null) {
+                session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
+            }
+            gameSessionRepository.save(session);
+        }
+        if (!STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+            return;
+        }
+
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        boolean isFull = participants.size() >= ROOM_SIZE;
+        boolean isExpired = session.getMatchmakingDeadline() != null && !session.getMatchmakingDeadline().isAfter(Instant.now());
+        if (!isFull && !isExpired) {
+            return;
+        }
+
+        if (!isFull) {
+            fillRoomWithBots(session, participants);
+            participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        }
+
+        assignBotBallPicks(session, participants);
+        session.setStatus(STATUS_PICKING);
+        gameSessionRepository.save(session);
+        logEvent(session, "SELECTION_STARTED", "Matchmaking completado. Empieza la seleccion de bolas.");
+    }
+
+    private void fillRoomWithBots(GameSessionEntity session, List<MatchParticipantEntity> participants) {
+        Set<Integer> currentUserIds = participants.stream()
+            .map(participant -> participant.getUser().getUserId())
+            .collect(HashSet::new, HashSet::add, HashSet::addAll);
+
+        int slot = 1;
+        while (currentUserIds.size() < ROOM_SIZE) {
+            UserEntity bot = findOrCreateBotUser(session.getMatchId(), slot);
+            slot++;
+            if (currentUserIds.contains(bot.getUserId())) {
+                continue;
+            }
+            createParticipant(session, bot);
+            currentUserIds.add(bot.getUserId());
+        }
+        logEvent(session, "BOTS_FILLED", "Se han completado los huecos con bots.");
+    }
+
+    private UserEntity findOrCreateBotUser(Integer matchId, int slot) {
+        String username = "Bot_" + matchId + "_" + slot;
+        return userRepository.findByUsername(username).orElseGet(() -> {
+            UserEntity bot = new UserEntity();
+            bot.setUsername(username);
+            bot.setEmail("bot+" + matchId + "_" + slot + "@fichestu.local");
+            bot.setPasswordHash("BOT");
+            bot.setRole("BOT");
+            bot.setFiatBalance(BigDecimal.ZERO);
+            return userRepository.save(bot);
+        });
+    }
+
+    private UserEntity findReplacementBotUser(GameSessionEntity session) {
+        int slot = ROOM_SIZE + 1;
+        while (true) {
+            UserEntity bot = findOrCreateBotUser(session.getMatchId(), slot);
+            if (!matchParticipantRepository.existsByIdMatchIdAndIdUserId(session.getMatchId(), bot.getUserId())) {
+                return bot;
+            }
+            slot++;
+        }
+    }
+
+    private void assignBotBallPicks(GameSessionEntity session, List<MatchParticipantEntity> participants) {
+        Set<Integer> pickedNumbers = participants.stream()
+            .map(MatchParticipantEntity::getSelectedBallNumber)
+            .filter(value -> value != null)
+            .collect(HashSet::new, HashSet::add, HashSet::addAll);
+
+        int nextBall = 1;
+        for (MatchParticipantEntity participant : participants) {
+            if (!"BOT".equalsIgnoreCase(participant.getUser().getRole()) || participant.getSelectedBallNumber() != null) {
+                continue;
+            }
+            while (pickedNumbers.contains(nextBall) && nextBall <= BALL_COUNT) {
+                nextBall++;
+            }
+            if (nextBall <= BALL_COUNT) {
+                participant.setSelectedBallNumber(nextBall);
+                pickedNumbers.add(nextBall);
+                matchParticipantRepository.save(participant);
+            }
+        }
+        logEvent(session, "BOT_BALLS_PICKED", "Los bots han elegido sus bolas automaticamente.");
+    }
+
+    private void closeIfMatchmakingIsEmpty(GameSessionEntity session) {
+        if (matchParticipantRepository.countByIdMatchId(session.getMatchId()) > 0) {
+            return;
+        }
+        session.setStatus(STATUS_CLOSED);
+        session.setEndTime(Instant.now());
+        gameSessionRepository.save(session);
     }
 
     private void createParticipant(GameSessionEntity session, UserEntity user) {
@@ -818,6 +1209,12 @@ public class GameService {
         user.setFiatBalance(user.getFiatBalance().subtract(BALL_ENTRY_COST).setScale(2, RoundingMode.HALF_UP));
         userRepository.save(user);
         logTransaction(user, "BALL_ENTRY", BALL_ENTRY_COST.negate(), "Entrada a sala de bolas");
+    }
+
+    private void refundBallEntry(UserEntity user) {
+        user.setFiatBalance(user.getFiatBalance().add(BALL_ENTRY_COST).setScale(2, RoundingMode.HALF_UP));
+        userRepository.save(user);
+        logTransaction(user, "BALL_ENTRY_REFUND", BALL_ENTRY_COST, "Devolucion por cancelar matchmaking");
     }
 
     private void persistCard(GameSessionEntity session, UserEntity owner, String cardType) {
