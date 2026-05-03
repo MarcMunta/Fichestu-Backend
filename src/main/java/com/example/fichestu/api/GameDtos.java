@@ -182,6 +182,10 @@ public final class GameDtos {
         @NotBlank
         private String action;
 
+        private Integer cardPower;
+
+        private Integer targetUserId;
+
         private String selectedToken;
 
         public String getAction() {
@@ -190,6 +194,22 @@ public final class GameDtos {
 
         public void setAction(String action) {
             this.action = action;
+        }
+
+        public Integer getCardPower() {
+            return cardPower;
+        }
+
+        public void setCardPower(Integer cardPower) {
+            this.cardPower = cardPower;
+        }
+
+        public Integer getTargetUserId() {
+            return targetUserId;
+        }
+
+        public void setTargetUserId(Integer targetUserId) {
+            this.targetUserId = targetUserId;
         }
 
         public String getSelectedToken() {

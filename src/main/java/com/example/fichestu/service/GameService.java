@@ -62,6 +62,8 @@ public class GameService {
     private static final BigDecimal MIN_TOKEN_PRICE = new BigDecimal("0.50");
     private static final BigDecimal MAX_TOKEN_PRICE = new BigDecimal("5000.00");
     private static final BigDecimal MAX_MARKET_IMPACT_MULTIPLIER = new BigDecimal("3.00");
+    private static final double MIN_BALL_MULTIPLIER = 0.50;
+    private static final double MAX_BALL_MULTIPLIER = 3.00;
     private static final int ROOM_SIZE = 10;
     private static final int BALL_COUNT = 50;
     private static final int INITIAL_HP = 50;
@@ -383,6 +385,7 @@ public class GameService {
                 gameSessionRepository.save(session);
             }
         }
+        closeIfOnlyBotsRemain(session);
         logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha salido. Un bot ocupa su plaza.");
 
         return new EnterBallRoomResponse(
@@ -497,7 +500,7 @@ public class GameService {
     }
 
     @Transactional
-    public MatchStateResponse playBattleRound(Integer matchId, String action, String selectedTokenAlias) {
+    public MatchStateResponse playBattleRound(Integer matchId, String action, Integer cardPower, Integer targetUserId, String selectedTokenAlias) {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
 
@@ -513,6 +516,7 @@ public class GameService {
 
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
         Map<Integer, String> actions = new HashMap<>();
+        Map<Integer, Integer> damageByUser = new HashMap<>();
 
         for (MatchParticipantEntity participant : participants) {
             if (!Boolean.TRUE.equals(participant.getAlive())) {
@@ -522,8 +526,12 @@ public class GameService {
             String chosenAction = participant.getUser().getUserId().equals(user.getUserId())
                 ? normalizeAction(action)
                 : randomAction();
+            int chosenPower = participant.getUser().getUserId().equals(user.getUserId())
+                ? normalizeCardPower(cardPower)
+                : randomBattlePower();
 
             actions.put(participant.getUser().getUserId(), chosenAction);
+            damageByUser.put(participant.getUser().getUserId(), chosenPower);
             persistCard(session, participant.getUser(), chosenAction);
         }
 
@@ -534,6 +542,19 @@ public class GameService {
 
         List<String> roundLogs = new ArrayList<>();
         int roundNumber = (int) gameSessionEventRepository.countByMatchMatchIdAndEventType(matchId, EVENT_ROUND_SUMMARY) + 1;
+
+        for (MatchParticipantEntity participant : participants) {
+            Integer participantId = participant.getUser().getUserId();
+            if (!Boolean.TRUE.equals(participant.getAlive())) {
+                continue;
+            }
+            String participantAction = actions.get(participantId);
+            if ("SHIELD".equals(participantAction)) {
+                roundLogs.add(participant.getUser().getUsername() + " usa defensa.");
+            } else if ("REBOUND".equals(participantAction)) {
+                roundLogs.add(participant.getUser().getUsername() + " prepara rebote.");
+            }
+        }
 
         for (MatchParticipantEntity attacker : participants) {
             Integer attackerId = attacker.getUser().getUserId();
@@ -553,19 +574,19 @@ public class GameService {
                 continue;
             }
 
-            MatchParticipantEntity target = possibleTargets.get(randomProvider.nextInt(possibleTargets.size()));
-            int damage = 1 + randomProvider.nextInt(9);
+            MatchParticipantEntity target = resolveBattleTarget(attackerId, user.getUserId(), targetUserId, possibleTargets);
+            int damage = damageByUser.getOrDefault(attackerId, randomBattlePower());
             Integer targetId = target.getUser().getUserId();
 
             if ("SHIELD".equals(actions.get(targetId))) {
-                roundLogs.add(attacker.getUser().getUsername() + " ataca a " + target.getUser().getUsername() + " pero el escudo lo bloquea.");
+                roundLogs.add(attacker.getUser().getUsername() + " ataca a " + target.getUser().getUsername() + " con " + damage + " de dano, pero defensa bloquea todo.");
                 continue;
             }
 
             if ("REBOUND".equals(actions.get(targetId))) {
                 int nextHp = Math.max(0, hpByUser.getOrDefault(attackerId, attacker.getCurrentHp()) - damage);
                 hpByUser.put(attackerId, nextHp);
-                roundLogs.add(target.getUser().getUsername() + " rebota " + damage + " de daño sobre " + attacker.getUser().getUsername() + ".");
+                roundLogs.add(attacker.getUser().getUsername() + " ataca a " + target.getUser().getUsername() + " con " + damage + " de dano, pero rebote devuelve ese dano a " + attacker.getUser().getUsername() + ".");
                 continue;
             }
 
@@ -575,9 +596,13 @@ public class GameService {
         }
 
         for (MatchParticipantEntity participant : participants) {
+            boolean wasAlive = Boolean.TRUE.equals(participant.getAlive());
             int hp = hpByUser.getOrDefault(participant.getUser().getUserId(), participant.getCurrentHp());
             participant.setCurrentHp(hp);
             participant.setAlive(hp > 0);
+            if (wasAlive && hp <= 0) {
+                roundLogs.add(participant.getUser().getUsername() + " ha sido derrotado.");
+            }
         }
         matchParticipantRepository.saveAll(participants);
 
@@ -585,9 +610,24 @@ public class GameService {
             .filter(participant -> Boolean.TRUE.equals(participant.getAlive()))
             .toList();
 
-        logEvent(session, EVENT_ROUND_SUMMARY, "Ronda " + roundNumber + " resuelta.");
+        logEvent(session, EVENT_ROUND_SUMMARY, String.format(Locale.ROOT, "Ronda %02d", roundNumber));
         for (String roundLog : roundLogs) {
             logEvent(session, "BATTLE_LOG", roundLog);
+        }
+
+        if (hasNoAliveHumanParticipants(aliveParticipants)) {
+            session.setStatus("FINISHED");
+            session.setEndTime(Instant.now());
+            session.setWinner(null);
+            gameSessionRepository.save(session);
+            logEvent(session, "BATTLE_CLOSED", "Partida cerrada automaticamente: solo quedaban bots vivos.");
+            notificationService.create(
+                user,
+                "Battle finalizada",
+                "Has sido eliminado. La partida se ha cerrado porque no quedaban jugadores reales.",
+                "BATTLE_FINISHED"
+            );
+            return buildMatchStateResponse(session, user.getUserId(), "Has sido eliminado", action);
         }
 
         if (aliveParticipants.size() <= 1) {
@@ -799,7 +839,7 @@ public class GameService {
         Map<Integer, Double> multiplierByBall = new HashMap<>();
         for (MatchParticipantEntity participant : participants) {
             if (participant.getSelectedBallNumber() != null && participant.getMultiplierWon() != null) {
-                multiplierByBall.put(participant.getSelectedBallNumber(), participant.getMultiplierWon().doubleValue());
+                multiplierByBall.put(participant.getSelectedBallNumber(), safeMultiplier(participant.getMultiplierWon()));
             }
         }
 
@@ -810,7 +850,7 @@ public class GameService {
                 participant.getUser().getUserId().equals(userId),
                 participant.getSelectedBallNumber(),
                 isMultiplierVisible(session.getStatus()) && participant.getMultiplierWon() != null
-                    ? participant.getMultiplierWon().doubleValue()
+                    ? safeMultiplier(participant.getMultiplierWon())
                     : null
             ))
             .toList();
@@ -855,7 +895,7 @@ public class GameService {
             Optional<MatchParticipantEntity> me = participants.stream()
                 .filter(participant -> participant.getUser().getUserId().equals(userId))
                 .findFirst();
-            double myMultiplier = me.map(value -> value.getMultiplierWon().doubleValue()).orElse(1.0);
+            double myMultiplier = me.map(value -> safeMultiplier(value.getMultiplierWon())).orElse(1.0);
             statusMessage = "Tu multiplicador es x" + formatMultiplier(myMultiplier) + ". Pasa al Battle Royale.";
         } else {
             phase = "WAITING_ENTRY";
@@ -885,7 +925,7 @@ public class GameService {
                 participant.getUser().getUserId().equals(userId) ? "Tu" : participant.getUser().getUsername(),
                 participant.getUser().getUserId().equals(userId),
                 participant.getCurrentHp(),
-                participant.getMultiplierWon() == null ? 1.0 : participant.getMultiplierWon().doubleValue(),
+                safeMultiplier(participant.getMultiplierWon()),
                 Boolean.TRUE.equals(participant.getAlive())
             ))
             .toList();
@@ -898,12 +938,12 @@ public class GameService {
             winnerName = session.getWinner().getUsername();
             winningMultiplier = participants.stream()
                 .filter(participant -> participant.getUser().getUserId().equals(session.getWinner().getUserId()))
-                .map(participant -> participant.getMultiplierWon().doubleValue())
+                .map(participant -> safeMultiplier(participant.getMultiplierWon()))
                 .findFirst()
                 .orElse(1.0);
         }
 
-        List<String> log = gameSessionEventRepository.findTop24ByMatchMatchIdOrderByEventIdDesc(session.getMatchId()).stream()
+        List<String> log = gameSessionEventRepository.findTop80ByMatchMatchIdOrderByEventIdDesc(session.getMatchId()).stream()
             .sorted(Comparator.comparing(GameSessionEventEntity::getEventId))
             .map(GameSessionEventEntity::getMessage)
             .toList();
@@ -1081,6 +1121,7 @@ public class GameService {
                 gameSessionRepository.save(session);
             }
         }
+        closeIfOnlyBotsRemain(session);
         logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha vuelto a entrar. Un bot ocupa su plaza anterior.");
     }
 
@@ -1188,6 +1229,29 @@ public class GameService {
         gameSessionRepository.save(session);
     }
 
+    private void closeIfOnlyBotsRemain(GameSessionEntity session) {
+        if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
+            return;
+        }
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        if (participants.isEmpty() || participants.stream().anyMatch(participant -> !isBotUser(participant.getUser()))) {
+            return;
+        }
+        session.setStatus("FINISHED");
+        session.setEndTime(Instant.now());
+        session.setWinner(null);
+        gameSessionRepository.save(session);
+        logEvent(session, "BATTLE_CLOSED", "Partida cerrada automaticamente: solo quedaban bots.");
+    }
+
+    private boolean hasNoAliveHumanParticipants(List<MatchParticipantEntity> aliveParticipants) {
+        return aliveParticipants.stream().noneMatch(participant -> !isBotUser(participant.getUser()));
+    }
+
+    private boolean isBotUser(UserEntity user) {
+        return user != null && "BOT".equalsIgnoreCase(user.getRole());
+    }
+
     private void createParticipant(GameSessionEntity session, UserEntity user) {
         MatchParticipantEntity participant = new MatchParticipantEntity();
         participant.setId(new MatchParticipantId(session.getMatchId(), user.getUserId()));
@@ -1287,6 +1351,33 @@ public class GameService {
         return normalized;
     }
 
+    private int normalizeCardPower(Integer cardPower) {
+        int fallback = randomBattlePower();
+        if (cardPower == null) {
+            return fallback;
+        }
+        return Math.max(1, Math.min(10, cardPower));
+    }
+
+    private int randomBattlePower() {
+        return 1 + randomProvider.nextInt(10);
+    }
+
+    private MatchParticipantEntity resolveBattleTarget(
+        Integer attackerId,
+        Integer currentUserId,
+        Integer requestedTargetUserId,
+        List<MatchParticipantEntity> possibleTargets
+    ) {
+        if (attackerId.equals(currentUserId) && requestedTargetUserId != null) {
+            return possibleTargets.stream()
+                .filter(participant -> participant.getUser().getUserId().equals(requestedTargetUserId))
+                .findFirst()
+                .orElseGet(() -> possibleTargets.get(randomProvider.nextInt(possibleTargets.size())));
+        }
+        return possibleTargets.get(randomProvider.nextInt(possibleTargets.size()));
+    }
+
     private String randomAction() {
         double value = randomProvider.nextDouble();
         if (value < 0.55) {
@@ -1301,8 +1392,18 @@ public class GameService {
     private BigDecimal randomMultiplier() {
         double random = randomProvider.nextDouble();
         double skewed = Math.pow(random, 2.8);
-        double value = 0.5 + (skewed * (100.0 - 0.5));
+        double value = MIN_BALL_MULTIPLIER + (skewed * (MAX_BALL_MULTIPLIER - MIN_BALL_MULTIPLIER));
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private double safeMultiplier(BigDecimal multiplier) {
+        if (multiplier == null) {
+            return 1.0;
+        }
+        return multiplier
+            .max(BigDecimal.valueOf(MIN_BALL_MULTIPLIER))
+            .min(BigDecimal.valueOf(MAX_BALL_MULTIPLIER))
+            .doubleValue();
     }
 
     private String formatMultiplier(double value) {

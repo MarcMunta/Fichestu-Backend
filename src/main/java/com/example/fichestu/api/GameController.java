@@ -97,7 +97,7 @@ public class GameController {
         @PathVariable Integer matchId,
         @Valid @RequestBody BattleActionRequest request
     ) {
-        return gameService.playBattleRound(matchId, request.getAction(), request.getSelectedToken());
+        return gameService.playBattleRound(matchId, request.getAction(), request.getCardPower(), request.getTargetUserId(), request.getSelectedToken());
     }
 
     @PostMapping("/matches/{matchId}/winner-impact")

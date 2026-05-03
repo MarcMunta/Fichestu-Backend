@@ -167,7 +167,7 @@ public class PlayerProfileReadService {
         if (stats.battlesWon() >= 1) {
             names.add("Primer Knockout");
         }
-        if (stats.bestMultiplier() >= 10.0) {
+        if (stats.bestMultiplier() >= 3.0) {
             names.add("Sangre Fria");
         }
         if (stats.ballRoomsPlayed() >= 5) {
@@ -188,7 +188,7 @@ public class PlayerProfileReadService {
     private List<BadgeSeed> defaultBadgeSeeds() {
         List<BadgeSeed> seeds = new ArrayList<>();
         seeds.add(new BadgeSeed("Primer Knockout", "Gana tu primera batalla.", null));
-        seeds.add(new BadgeSeed("Sangre Fria", "Consigue multiplicador x10 o superior.", null));
+        seeds.add(new BadgeSeed("Sangre Fria", "Consigue multiplicador x3 o superior.", null));
         seeds.add(new BadgeSeed("Trader Diario", "Juega 5 salas de bolas.", null));
         seeds.add(new BadgeSeed("Maestro Royale", "Mantiene winrate del 50% con 6 batallas.", null));
         seeds.add(new BadgeSeed("Bonus Hunter", "Reclama 3 rewarded ads.", null));

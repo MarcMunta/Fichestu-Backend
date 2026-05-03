@@ -256,6 +256,67 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.message").value("El impacto ya fue aplicado"));
     }
 
+    @Test
+    void battleClosesWhenOnlyBotsRemainAlive() throws Exception {
+        createDefaultTokens();
+        List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
+
+        String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
+
+        for (int i = 1; i < 10; i++) {
+            mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
+                    .header("Authorization", bearerFor(users.get(i))))
+                .andExpect(status().isOk());
+        }
+
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(post("/api/game/matches/{matchId}/pick-ball", matchId)
+                    .header("Authorization", bearerFor(users.get(i)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(Map.of("ballId", i + 1))))
+                .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/reveal", matchId)
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk());
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        for (int i = 1; i < 10; i++) {
+            users.get(i).setRole("BOT");
+            userRepository.save(users.get(i));
+        }
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        for (MatchParticipantEntity participant : participants) {
+            if (participant.getUser().getUserId().equals(users.get(0).getUserId())) {
+                participant.setCurrentHp(1);
+            } else {
+                participant.setCurrentHp(50);
+            }
+            participant.setAlive(true);
+        }
+        matchParticipantRepository.saveAll(participants);
+        session.setStatus("REVEALED");
+        gameSessionRepository.save(session);
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/battle/round", matchId)
+                .header("Authorization", bearerFor(users.get(0)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("action", "ATTACK"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.battle.phase").value("FINISHED"));
+
+        GameSessionEntity finishedSession = gameSessionRepository.findById(matchId).orElseThrow();
+        assertThat(finishedSession.getStatus()).isEqualTo("FINISHED");
+        assertThat(finishedSession.getWinner()).isNull();
+    }
+
     private void mockMvcPerformBuy(UserEntity user, String token, int quantity) {
         try {
             mockMvc.perform(post("/api/game/market/buy")

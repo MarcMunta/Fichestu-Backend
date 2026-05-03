@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface GameSessionEventRepository extends JpaRepository<GameSessionEventEntity, Integer> {
-    List<GameSessionEventEntity> findTop24ByMatchMatchIdOrderByEventIdDesc(Integer matchId);
+    List<GameSessionEventEntity> findTop80ByMatchMatchIdOrderByEventIdDesc(Integer matchId);
 
     long countByMatchMatchIdAndEventType(Integer matchId, String eventType);
 }
