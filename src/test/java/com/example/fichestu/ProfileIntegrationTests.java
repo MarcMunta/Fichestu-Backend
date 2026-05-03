@@ -27,7 +27,20 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.username").value("alice"))
             .andExpect(jsonPath("$.email").value("alice@test.com"))
-            .andExpect(jsonPath("$.profilePicUrl").value("https://example.com/avatar.png"));
+            .andExpect(jsonPath("$.profilePicUrl").value("https://example.com/avatar.png"))
+            .andExpect(jsonPath("$.hasPassword").value(true));
+    }
+
+    @Test
+    void profileMarksGoogleOnlyUserWithoutPassword() throws Exception {
+        var user = createUser("google-user", "google@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        user.setPasswordHash(null);
+        userRepository.save(user);
+
+        mockMvc.perform(get("/api/profile")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.hasPassword").value(false));
     }
 
     @Test

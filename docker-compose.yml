@@ -34,6 +34,8 @@ services:
       HIBERNATE_DDL_AUTO: validate
     ports:
       - "8080:8080"
+    volumes:
+      - avatar_uploads:/app/uploads
     develop:
       watch:
         - action: rebuild
@@ -56,3 +58,4 @@ services:
 
 volumes:
   mysql_data:
+  avatar_uploads:

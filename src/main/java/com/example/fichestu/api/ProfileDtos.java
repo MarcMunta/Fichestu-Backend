@@ -18,7 +18,8 @@ public final class ProfileDtos {
         String username,
         String email,
         String role,
-        String profilePicUrl
+        String profilePicUrl,
+        Boolean hasPassword
     ) {
     }
 

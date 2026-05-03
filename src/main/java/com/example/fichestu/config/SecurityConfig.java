@@ -48,6 +48,7 @@ public class SecurityConfig {
                     "/api/auth/password-reset/request",
                     "/api/auth/password-reset/confirm"
                 ).permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/profile/avatar/**").permitAll()
                 .requestMatchers("/api/auth/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()

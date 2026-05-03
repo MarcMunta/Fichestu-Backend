@@ -11,14 +11,28 @@ import com.example.fichestu.persistence.repository.UserRepository;
 import com.example.fichestu.security.CurrentUserService;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class ProfileService {
+
+    private static final Path AVATAR_UPLOAD_DIR = Path.of("uploads", "profile-pictures");
+    private static final Set<String> ALLOWED_AVATAR_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
@@ -70,6 +84,63 @@ public class ProfileService {
         userRepository.save(user);
 
         return toProfileResponse(user, "Perfil actualizado");
+    }
+
+    @Transactional
+    public ProfileResponse uploadAvatar(MultipartFile avatar) {
+        UserEntity user = currentUserService.requireUserEntity();
+
+        if (avatar == null || avatar.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La imagen es obligatoria");
+        }
+
+        String contentType = avatar.getContentType() == null
+            ? ""
+            : avatar.getContentType().toLowerCase(Locale.ROOT);
+        if (!ALLOWED_AVATAR_TYPES.contains(contentType)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Formato de imagen no permitido");
+        }
+
+        String extension = switch (contentType) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> ".jpg";
+        };
+        String fileName = "user-" + user.getUserId() + "-" + UUID.randomUUID() + extension;
+
+        try {
+            Files.createDirectories(AVATAR_UPLOAD_DIR);
+            Path target = AVATAR_UPLOAD_DIR.resolve(fileName).normalize();
+            Files.copy(avatar.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "No se pudo guardar la imagen");
+        }
+
+        user.setProfilePicUrl("/api/profile/avatar/" + fileName);
+        userRepository.save(user);
+
+        return toProfileResponse(user, "Foto de perfil actualizada");
+    }
+
+    public ResponseEntity<Resource> getAvatar(String fileName) {
+        if (fileName == null || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre de imagen invalido");
+        }
+
+        try {
+            Path file = AVATAR_UPLOAD_DIR.resolve(fileName).normalize();
+            Resource resource = new UrlResource(file.toUri());
+            if (!resource.exists() || !resource.isReadable()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Imagen no encontrada");
+            }
+            return ResponseEntity.ok()
+                .contentType(resolveMediaType(fileName))
+                .body(resource);
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Imagen no encontrada");
+        }
     }
 
     @Transactional
@@ -142,13 +213,26 @@ public class ProfileService {
     }
 
     private ProfileResponse toProfileResponse(UserEntity user, String message) {
+        boolean hasPassword = user.getPasswordHash() != null && !user.getPasswordHash().isBlank();
         return new ProfileResponse(
             message,
             true,
             user.getUsername(),
             user.getEmail(),
             user.getRole(),
-            user.getProfilePicUrl()
+            user.getProfilePicUrl(),
+            hasPassword
         );
+    }
+
+    private MediaType resolveMediaType(String fileName) {
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".png")) {
+            return MediaType.IMAGE_PNG;
+        }
+        if (lower.endsWith(".webp")) {
+            return MediaType.parseMediaType("image/webp");
+        }
+        return MediaType.IMAGE_JPEG;
     }
 }
