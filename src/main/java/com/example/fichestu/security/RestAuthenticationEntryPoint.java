@@ -1,5 +1,6 @@
 package com.example.fichestu.security;
 
+import com.example.fichestu.service.I18nService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -17,9 +18,11 @@ import org.springframework.stereotype.Component;
 public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
     private final ObjectMapper objectMapper;
+    private final I18nService i18nService;
 
-    public RestAuthenticationEntryPoint(ObjectMapper objectMapper) {
+    public RestAuthenticationEntryPoint(ObjectMapper objectMapper, I18nService i18nService) {
         this.objectMapper = objectMapper;
+        this.i18nService = i18nService;
     }
 
     @Override
@@ -44,7 +47,7 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
         body.put("timestamp", Instant.now().toString());
         body.put("status", status.value());
         body.put("error", status.getReasonPhrase());
-        body.put("message", message);
+        body.put("message", i18nService.translate(message, request));
         body.put("path", request.getRequestURI());
 
         objectMapper.writeValue(response.getOutputStream(), body);

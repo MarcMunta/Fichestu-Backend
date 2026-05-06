@@ -1,5 +1,6 @@
 package com.example.fichestu.security;
 
+import com.example.fichestu.service.I18nService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -17,9 +18,11 @@ import org.springframework.stereotype.Component;
 public class RestAccessDeniedHandler implements AccessDeniedHandler {
 
     private final ObjectMapper objectMapper;
+    private final I18nService i18nService;
 
-    public RestAccessDeniedHandler(ObjectMapper objectMapper) {
+    public RestAccessDeniedHandler(ObjectMapper objectMapper, I18nService i18nService) {
         this.objectMapper = objectMapper;
+        this.i18nService = i18nService;
     }
 
     @Override
@@ -35,7 +38,7 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
         body.put("timestamp", Instant.now().toString());
         body.put("status", HttpStatus.FORBIDDEN.value());
         body.put("error", HttpStatus.FORBIDDEN.getReasonPhrase());
-        body.put("message", "No tienes permisos para esta operacion");
+        body.put("message", i18nService.translate("No tienes permisos para esta operacion", request));
         body.put("path", request.getRequestURI());
 
         objectMapper.writeValue(response.getOutputStream(), body);

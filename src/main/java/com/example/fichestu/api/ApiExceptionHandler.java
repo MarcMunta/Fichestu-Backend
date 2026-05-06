@@ -1,5 +1,6 @@
 package com.example.fichestu.api;
 
+import com.example.fichestu.service.I18nService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.time.Instant;
@@ -15,6 +16,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    private final I18nService i18nService;
+
+    public ApiExceptionHandler(I18nService i18nService) {
+        this.i18nService = i18nService;
+    }
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleResponseStatus(
@@ -64,7 +71,7 @@ public class ApiExceptionHandler {
         body.put("timestamp", Instant.now().toString());
         body.put("status", status.value());
         body.put("error", status.getReasonPhrase());
-        body.put("message", message);
+        body.put("message", i18nService.translate(message, request));
         body.put("path", request.getRequestURI());
         return body;
     }
