@@ -37,6 +37,9 @@ public class UserEntity {
     @Column(nullable = false, length = 20)
     private String role = "USER";
 
+    @Column(name = "preferred_language", nullable = false, length = 5)
+    private String preferredLanguage = "es";
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -50,6 +53,9 @@ public class UserEntity {
         }
         if (role == null || role.isBlank()) {
             role = "USER";
+        }
+        if (preferredLanguage == null || preferredLanguage.isBlank()) {
+            preferredLanguage = "es";
         }
     }
 
@@ -107,6 +113,14 @@ public class UserEntity {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public String getPreferredLanguage() {
+        return preferredLanguage;
+    }
+
+    public void setPreferredLanguage(String preferredLanguage) {
+        this.preferredLanguage = preferredLanguage;
     }
 
     public Instant getCreatedAt() {

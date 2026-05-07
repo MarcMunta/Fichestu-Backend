@@ -4,6 +4,7 @@ import com.example.fichestu.api.GameDtos.BadgeDto;
 import com.example.fichestu.api.GameDtos.ProfileStatsDto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 
@@ -19,7 +20,8 @@ public final class ProfileDtos {
         String email,
         String role,
         String profilePicUrl,
-        Boolean hasPassword
+        Boolean hasPassword,
+        String preferredLanguage
     ) {
     }
 
@@ -90,6 +92,20 @@ public final class ProfileDtos {
 
         public void setConfirmPassword(String confirmPassword) {
             this.confirmPassword = confirmPassword;
+        }
+    }
+
+    public static class UpdateLanguageRequest {
+        @NotBlank
+        @Pattern(regexp = "es|ca|en")
+        private String language;
+
+        public String getLanguage() {
+            return language;
+        }
+
+        public void setLanguage(String language) {
+            this.language = language;
         }
     }
 

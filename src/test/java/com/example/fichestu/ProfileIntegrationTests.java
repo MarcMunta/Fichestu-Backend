@@ -47,7 +47,7 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
     void unauthenticatedProfileFetchIsRejected() throws Exception {
         mockMvc.perform(get("/api/profile"))
             .andExpect(status().isUnauthorized())
-            .andExpect(jsonPath("$.message").value("Sesion invalida"));
+            .andExpect(jsonPath("$.message").value("Sesión inválida"));
     }
 
     @Test
@@ -64,7 +64,7 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
                     "profilePicUrl", "https://example.com/new.png"
                 ))))
             .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.message").value("El username ya esta en uso"));
+            .andExpect(jsonPath("$.message").value("El username ya está en uso"));
     }
 
     @Test
@@ -99,7 +99,7 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
                     "confirmPassword", "new-secret"
                 ))))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("La contrasena actual no es correcta"));
+            .andExpect(jsonPath("$.message").value("La contraseña actual no es correcta"));
 
         mockMvc.perform(post("/api/profile/change-password")
                 .header("Authorization", bearerFor(user))

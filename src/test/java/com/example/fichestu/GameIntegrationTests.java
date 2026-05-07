@@ -160,7 +160,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
                 .header("Authorization", bearerFor(users.get(10))))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("La sala ya esta llena"));
+            .andExpect(jsonPath("$.message").value("La sala ya está llena"));
     }
 
     @Test
