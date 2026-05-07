@@ -6,6 +6,7 @@ import com.example.fichestu.api.ProfileDtos.GenericResponse;
 import com.example.fichestu.api.ProfileDtos.ProfileResponse;
 import com.example.fichestu.api.ProfileDtos.StatsResponse;
 import com.example.fichestu.api.ProfileDtos.UpdateProfileRequest;
+import com.example.fichestu.api.ProfileDtos.UpdateLanguageRequest;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.repository.UserRepository;
 import com.example.fichestu.security.CurrentUserService;
@@ -176,6 +177,15 @@ public class ProfileService {
     }
 
     @Transactional
+    public ProfileResponse updateLanguage(UpdateLanguageRequest request) {
+        UserEntity user = currentUserService.requireUserEntity();
+        String language = normalizeLanguage(request.getLanguage());
+        user.setPreferredLanguage(language);
+        userRepository.save(user);
+        return toProfileResponse(user, "Idioma actualizado");
+    }
+
+    @Transactional
     public BadgeListResponse getBadges() {
         UserEntity user = currentUserService.requireUserEntity();
         return new BadgeListResponse(
@@ -221,8 +231,20 @@ public class ProfileService {
             user.getEmail(),
             user.getRole(),
             user.getProfilePicUrl(),
-            hasPassword
+            hasPassword,
+            normalizeLanguage(user.getPreferredLanguage())
         );
+    }
+
+    private String normalizeLanguage(String rawLanguage) {
+        if (rawLanguage == null) {
+            return "es";
+        }
+        String normalized = rawLanguage.trim().toLowerCase(Locale.ROOT);
+        if ("ca".equals(normalized) || "en".equals(normalized) || "es".equals(normalized)) {
+            return normalized;
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Idioma no soportado");
     }
 
     private MediaType resolveMediaType(String fileName) {

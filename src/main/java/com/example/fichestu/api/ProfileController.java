@@ -6,6 +6,7 @@ import com.example.fichestu.api.ProfileDtos.GenericResponse;
 import com.example.fichestu.api.ProfileDtos.ProfileResponse;
 import com.example.fichestu.api.ProfileDtos.StatsResponse;
 import com.example.fichestu.api.ProfileDtos.UpdateProfileRequest;
+import com.example.fichestu.api.ProfileDtos.UpdateLanguageRequest;
 import com.example.fichestu.service.ProfileService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
@@ -63,5 +64,10 @@ public class ProfileController {
     @PostMapping("/change-password")
     public GenericResponse changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         return profileService.changePassword(request);
+    }
+
+    @PutMapping("/language")
+    public ProfileResponse updateLanguage(@Valid @RequestBody UpdateLanguageRequest request) {
+        return profileService.updateLanguage(request);
     }
 }

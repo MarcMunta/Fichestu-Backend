@@ -69,7 +69,7 @@ class AuthIntegrationTests extends IntegrationTestSupport {
                     "password", "bad-pass"
                 ))))
             .andExpect(status().isUnauthorized())
-            .andExpect(jsonPath("$.message").value("Credenciales invalidas"));
+            .andExpect(jsonPath("$.message").value("Credenciales inválidas"));
     }
 
     @Test
@@ -140,7 +140,7 @@ class AuthIntegrationTests extends IntegrationTestSupport {
                     "confirmPassword", "new-secret"
                 ))))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("Token invalido o caducado"));
+            .andExpect(jsonPath("$.message").value("Token inválido o caducado"));
     }
 
     @Test
@@ -159,7 +159,7 @@ class AuthIntegrationTests extends IntegrationTestSupport {
     void protectedEndpointRejectsMissingJwt() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
             .andExpect(status().isUnauthorized())
-            .andExpect(jsonPath("$.message").value("Sesion invalida"));
+            .andExpect(jsonPath("$.message").value("Sesión inválida"));
     }
 
     @Test
@@ -183,7 +183,7 @@ class AuthIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(get("/api/auth/admin/ping")
                 .header("Authorization", bearerFor(user)))
             .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.message").value("No tienes permisos para esta operacion"));
+            .andExpect(jsonPath("$.message").value("No tienes permisos para esta operación"));
     }
 
     private void createPasswordResetToken(
