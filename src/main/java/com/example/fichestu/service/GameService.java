@@ -365,6 +365,19 @@ public class GameService {
             );
         }
 
+        matchParticipantRepository.delete(participant);
+        closeIfOnlyBotsRemain(session);
+        if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
+            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha salido. La partida se cierra porque solo quedaban bots.");
+            return new EnterBallRoomResponse(
+                "Has salido de la partida",
+                true,
+                null,
+                user.getFiatBalance(),
+                new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
+            );
+        }
+
         UserEntity bot = findReplacementBotUser(session);
         MatchParticipantEntity replacement = new MatchParticipantEntity();
         replacement.setId(new MatchParticipantId(matchId, bot.getUserId()));
@@ -375,7 +388,6 @@ public class GameService {
         replacement.setCurrentHp(participant.getCurrentHp());
         replacement.setAlive(participant.getAlive());
 
-        matchParticipantRepository.delete(participant);
         matchParticipantRepository.save(replacement);
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
         if (STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
@@ -1100,6 +1112,13 @@ public class GameService {
             return;
         }
 
+        matchParticipantRepository.delete(participant);
+        closeIfOnlyBotsRemain(session);
+        if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
+            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha vuelto a entrar. La partida anterior se cierra porque solo quedaban bots.");
+            return;
+        }
+
         UserEntity bot = findReplacementBotUser(session);
         MatchParticipantEntity replacement = new MatchParticipantEntity();
         replacement.setId(new MatchParticipantId(session.getMatchId(), bot.getUserId()));
@@ -1110,7 +1129,6 @@ public class GameService {
         replacement.setCurrentHp(participant.getCurrentHp());
         replacement.setAlive(participant.getAlive());
 
-        matchParticipantRepository.delete(participant);
         matchParticipantRepository.save(replacement);
 
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
@@ -1162,7 +1180,7 @@ public class GameService {
 
         int slot = 1;
         while (currentUserIds.size() < ROOM_SIZE) {
-            UserEntity bot = findOrCreateBotUser(session.getMatchId(), slot);
+            UserEntity bot = findOrCreateBotUser(slot);
             slot++;
             if (currentUserIds.contains(bot.getUserId())) {
                 continue;
@@ -1173,12 +1191,12 @@ public class GameService {
         logEvent(session, "BOTS_FILLED", "Se han completado los huecos con bots.");
     }
 
-    private UserEntity findOrCreateBotUser(Integer matchId, int slot) {
-        String username = "Bot_" + matchId + "_" + slot;
+    private UserEntity findOrCreateBotUser(int slot) {
+        String username = "Bot_" + slot;
         return userRepository.findByUsername(username).orElseGet(() -> {
             UserEntity bot = new UserEntity();
             bot.setUsername(username);
-            bot.setEmail("bot+" + matchId + "_" + slot + "@fichestu.local");
+            bot.setEmail("bot+" + slot + "@fichestu.local");
             bot.setPasswordHash("BOT");
             bot.setRole("BOT");
             bot.setFiatBalance(BigDecimal.ZERO);
@@ -1187,14 +1205,13 @@ public class GameService {
     }
 
     private UserEntity findReplacementBotUser(GameSessionEntity session) {
-        int slot = ROOM_SIZE + 1;
-        while (true) {
-            UserEntity bot = findOrCreateBotUser(session.getMatchId(), slot);
+        for (int slot = 1; slot < ROOM_SIZE; slot++) {
+            UserEntity bot = findOrCreateBotUser(slot);
             if (!matchParticipantRepository.existsByIdMatchIdAndIdUserId(session.getMatchId(), bot.getUserId())) {
                 return bot;
             }
-            slot++;
         }
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "No hay bots libres para ocupar la plaza");
     }
 
     private void assignBotBallPicks(GameSessionEntity session, List<MatchParticipantEntity> participants) {
@@ -1234,7 +1251,14 @@ public class GameService {
             return;
         }
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
-        if (participants.isEmpty() || participants.stream().anyMatch(participant -> !isBotUser(participant.getUser()))) {
+        if (participants.isEmpty()) {
+            session.setStatus(STATUS_CLOSED);
+            session.setEndTime(Instant.now());
+            gameSessionRepository.save(session);
+            logEvent(session, "BATTLE_CLOSED", "Partida cerrada automaticamente: no quedaban participantes.");
+            return;
+        }
+        if (participants.stream().anyMatch(participant -> !isBotUser(participant.getUser()))) {
             return;
         }
         session.setStatus("FINISHED");

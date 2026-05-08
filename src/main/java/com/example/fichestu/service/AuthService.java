@@ -41,6 +41,7 @@ public class AuthService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final JwtTokenRevocationService jwtTokenRevocationService;
     private final CurrentUserService currentUserService;
     private final PasswordResetMailService passwordResetMailService;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -56,6 +57,7 @@ public class AuthService {
         PasswordResetTokenRepository passwordResetTokenRepository,
         BCryptPasswordEncoder passwordEncoder,
         JwtService jwtService,
+        JwtTokenRevocationService jwtTokenRevocationService,
         CurrentUserService currentUserService,
         PasswordResetMailService passwordResetMailService
     ) {
@@ -63,6 +65,7 @@ public class AuthService {
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.jwtTokenRevocationService = jwtTokenRevocationService;
         this.currentUserService = currentUserService;
         this.passwordResetMailService = passwordResetMailService;
     }
@@ -148,6 +151,13 @@ public class AuthService {
         }
     }
 
+    @Transactional
+    public GenericResponse logout(String authorization) {
+        String token = extractBearerToken(authorization);
+        jwtTokenRevocationService.revoke(token, "LOGOUT");
+        return new GenericResponse("Sesion cerrada", true);
+    }
+
     @Transactional(readOnly = true)
     public SessionResponse currentSession() {
         UserEntity user = currentUserService.requireUserEntity();
@@ -225,6 +235,17 @@ public class AuthService {
 
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase();
+    }
+
+    private String extractBearerToken(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sesion invalida");
+        }
+        String token = authorization.substring(7).trim();
+        if (token.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sesion invalida");
+        }
+        return token;
     }
 
     private String resolveAvailableUsername(String baseCandidate) {

@@ -7,10 +7,13 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.Key;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.HexFormat;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
 
@@ -36,7 +39,6 @@ public class JwtService {
             .claim("uid", user.getUserId())
             .claim("email", user.getEmail())
             .claim("username", user.getUsername())
-            .claim("role", normalizeRole(user.getRole()))
             .setIssuedAt(Date.from(issuedAt))
             .setExpiration(Date.from(expiresAt))
             .signWith(signingKey(), SignatureAlgorithm.HS256)
@@ -44,6 +46,11 @@ public class JwtService {
     }
 
     public Optional<AuthenticatedUser> parseToken(String token) {
+        return parseClaims(token)
+            .map(claims -> new AuthenticatedUser(claims.userId(), claims.email(), claims.username(), "USER"));
+    }
+
+    public Optional<JwtTokenClaims> parseClaims(String token) {
         try {
             Claims claims = Jwts.parserBuilder()
                 .setSigningKey(signingKey())
@@ -54,15 +61,24 @@ public class JwtService {
             Integer userId = claims.get("uid", Integer.class);
             String email = claims.get("email", String.class);
             String username = claims.get("username", String.class);
-            String role = claims.get("role", String.class);
+            Date expiration = claims.getExpiration();
 
-            if (userId == null || email == null || username == null || role == null) {
+            if (userId == null || email == null || username == null || expiration == null) {
                 return Optional.empty();
             }
 
-            return Optional.of(new AuthenticatedUser(userId, email, username, normalizeRole(role)));
+            return Optional.of(new JwtTokenClaims(userId, email, username, expiration.toInstant()));
         } catch (JwtException | IllegalArgumentException ex) {
             return Optional.empty();
+        }
+    }
+
+    public String hashToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", ex);
         }
     }
 
@@ -74,7 +90,4 @@ public class JwtService {
         return Keys.hmacShaKeyFor(secretBytes);
     }
 
-    private String normalizeRole(String role) {
-        return role == null || role.isBlank() ? "USER" : role.trim().toUpperCase();
-    }
 }

@@ -11,6 +11,7 @@ import com.example.fichestu.persistence.repository.MatchCardRepository;
 import com.example.fichestu.persistence.repository.MatchParticipantRepository;
 import com.example.fichestu.persistence.repository.NotificationRepository;
 import com.example.fichestu.persistence.repository.PasswordResetTokenRepository;
+import com.example.fichestu.persistence.repository.RevokedJwtTokenRepository;
 import com.example.fichestu.persistence.repository.TokenPriceHistoryRepository;
 import com.example.fichestu.persistence.repository.TokenRepository;
 import com.example.fichestu.persistence.repository.TransactionLogRepository;
@@ -86,6 +87,9 @@ abstract class IntegrationTestSupport {
     protected PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Autowired
+    protected RevokedJwtTokenRepository revokedJwtTokenRepository;
+
+    @Autowired
     protected NotificationRepository notificationRepository;
 
     @BeforeEach
@@ -102,6 +106,7 @@ abstract class IntegrationTestSupport {
         tokenRepository.deleteAll();
         marketResetAuditRepository.deleteAll();
         passwordResetTokenRepository.deleteAll();
+        revokedJwtTokenRepository.deleteAll();
         notificationRepository.deleteAll();
         userRepository.deleteAll();
     }
