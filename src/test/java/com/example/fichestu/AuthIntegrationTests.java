@@ -186,6 +186,41 @@ class AuthIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.message").value("No tienes permisos para esta operación"));
     }
 
+    @Test
+    void logoutRevokesCurrentJwt() throws Exception {
+        var user = createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        String bearer = bearerFor(user);
+
+        mockMvc.perform(post("/api/auth/logout")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true));
+
+        assertThat(revokedJwtTokenRepository.count()).isEqualTo(1);
+
+        mockMvc.perform(get("/api/auth/me")
+                .header("Authorization", bearer))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void authorizationUsesCurrentDatabaseRoleInsteadOfTokenRole() throws Exception {
+        var user = createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        String bearer = bearerFor(user);
+
+        mockMvc.perform(get("/api/auth/admin/ping")
+                .header("Authorization", bearer))
+            .andExpect(status().isForbidden());
+
+        user.setRole("ADMIN");
+        userRepository.save(user);
+
+        mockMvc.perform(get("/api/auth/admin/ping")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true));
+    }
+
     private void createPasswordResetToken(
         com.example.fichestu.persistence.entity.UserEntity user,
         String rawToken,

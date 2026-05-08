@@ -10,7 +10,7 @@ import org.springframework.validation.annotation.Validated;
 public class JwtProperties {
 
     @NotBlank
-    private String secret = "change-me-change-me-change-me-change-me";
+    private String secret;
 
     @Min(60)
     private long expirationSeconds = 3600;

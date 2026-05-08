@@ -210,13 +210,22 @@ public class ProfileService {
             return null;
         }
 
+        String trimmed = rawValue.trim();
+        if (trimmed.startsWith("preset:")) {
+            String presetId = trimmed.substring("preset:".length());
+            if (!presetId.matches("[a-z0-9-]{1,40}")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Avatar predefinido no valido");
+            }
+            return trimmed;
+        }
+
         try {
-            URI uri = new URI(rawValue.trim());
+            URI uri = new URI(trimmed);
             String scheme = uri.getScheme();
             if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La imagen de perfil debe usar http o https");
             }
-            return rawValue.trim();
+            return trimmed;
         } catch (URISyntaxException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La imagen de perfil no es una URL valida");
         }
