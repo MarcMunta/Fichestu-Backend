@@ -1,5 +1,5 @@
 -- =======================================================
--- BASE DE DATOS: CASINO CRIPTO BATTLE ROYALE
+-- BASE DE DATOS: FICHESTU
 -- Motor: MySQL / MariaDB
 -- =======================================================
 
@@ -122,7 +122,7 @@ INSERT INTO tokens (name, color_code, current_price) VALUES
 ('Ficha Dorada', '#FFD700', 100.00);
 
 INSERT INTO users (username, email, password_hash, role, fiat_balance)
-VALUES ('SuperAdmin', 'admin@casino.com', 'admin123', 'ADMIN', 999999.99);
+VALUES ('SuperAdmin', 'admin@fichestu.local', 'admin123', 'ADMIN', 999999.99);
 
 INSERT INTO users (username, email, password_hash, role, fiat_balance)
 VALUES ('Jugador1', 'player@test.com', 'pass123', 'USER', 100.00);
