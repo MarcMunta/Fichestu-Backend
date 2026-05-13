@@ -52,6 +52,45 @@ Con los contenedores levantados:
 Esto reconstruye/reinicia el backend cuando hay cambios en el repo.
 Las migraciones nuevas de Flyway se aplican automaticamente al reiniciar.
 
+## Usar Supabase como base de datos
+
+Supabase hospeda PostgreSQL. Este backend sigue siendo una app Spring Boot: Supabase no ejecuta directamente un servidor Java. Flujo recomendado:
+
+- Supabase: base de datos PostgreSQL.
+- Backend Spring Boot: desplegado en Render/Railway/Fly/VPS o ejecutado local.
+- Android: conectado al URL publico del backend Spring Boot.
+
+Se ha anadido perfil `supabase`:
+
+- Config: `src/main/resources/application-supabase.properties`
+- Migraciones PostgreSQL: `src/main/resources/db/migration-postgres`
+- Ejemplo de secretos: `.env.supabase.example`
+
+Variables necesarias:
+
+- `SPRING_PROFILES_ACTIVE=supabase`
+- `DB_URL=jdbc:postgresql://aws-0-eu-west-3.pooler.supabase.com:5432/postgres?sslmode=require`
+- `DB_USERNAME=fichestu_app.mzzbrrmgmsjvuycuazjl`
+- `DB_PASSWORD=<password-del-role-fichestu_app>`
+- `JWT_SECRET=<secret-real-largo>`
+- `FLYWAY_ENABLED=false`
+
+Proyecto creado para Fichestu:
+
+- Supabase ref: `mzzbrrmgmsjvuycuazjl`
+- API URL: `https://mzzbrrmgmsjvuycuazjl.supabase.co`
+- DB host: `db.mzzbrrmgmsjvuycuazjl.supabase.co`
+- Runtime DB role: `fichestu_app`
+- Runtime connection: Supavisor session pooler, SSL, permisos limitados.
+
+Arranque local contra Supabase:
+
+- Docker: `run-supabase.bat`
+- Manual: `docker compose -f docker-compose.supabase.yml up --build -d`
+- Windows PowerShell sin Docker: carga esas variables y ejecuta `./mvnw.cmd spring-boot:run`
+
+En modo Supabase, Flyway queda apagado por defecto (`FLYWAY_ENABLED=false`) porque el backend usa el role limitado `fichestu_app`. Las migraciones se aplican desde Supabase/Codex con permisos admin, no desde la app.
+
 ## Base de datos oficial del proyecto
 
 La estructura completa esta en:

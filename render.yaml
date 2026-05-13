@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: fichestu-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    branch: main
+    autoDeploy: true
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: supabase
+      - key: DB_URL
+        value: jdbc:postgresql://aws-0-eu-west-3.pooler.supabase.com:5432/postgres?sslmode=require
+      - key: DB_USERNAME
+        value: fichestu_app.mzzbrrmgmsjvuycuazjl
+      - key: DB_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION_SECONDS
+        value: "3600"
+      - key: HIBERNATE_DDL_AUTO
+        value: validate
+      - key: HIBERNATE_SHOW_SQL
+        value: "false"
+      - key: FLYWAY_ENABLED
+        value: "false"
+      - key: PASSWORD_RESET_EXPIRATION_MINUTES
+        value: "15"
+      - key: PASSWORD_RESET_MAIL_ENABLED
+        value: "false"
+      - key: PASSWORD_RESET_FROM
+        value: noreply@fichestu.local
+      - key: MAIL_HOST
+        value: localhost
+      - key: MAIL_PORT
+        value: "1025"
+      - key: MAIL_USERNAME
+        value: ""
+      - key: MAIL_PASSWORD
+        value: ""
+      - key: MAIL_SMTP_AUTH
+        value: "false"
+      - key: MAIL_SMTP_STARTTLS_ENABLE
+        value: "false"
+      - key: MAIL_SMTP_STARTTLS_REQUIRED
+        value: "false"
+      - key: MAIL_CONNECTION_TIMEOUT_MS
+        value: "10000"
+      - key: MAIL_TIMEOUT_MS
+        value: "10000"
+      - key: MAIL_WRITE_TIMEOUT_MS
+        value: "10000"

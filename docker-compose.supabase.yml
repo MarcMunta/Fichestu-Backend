@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fichestu-backend-supabase
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - avatar_uploads:/app/uploads
+
+volumes:
+  avatar_uploads:
