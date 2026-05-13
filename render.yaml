@@ -8,6 +8,7 @@ services:
     region: frankfurt
     branch: main
     autoDeploy: true
+    healthCheckPath: /api/health
     envVars:
       - key: SPRING_PROFILES_ACTIVE
         value: supabase
