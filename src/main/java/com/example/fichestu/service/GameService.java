@@ -37,6 +37,8 @@ import com.example.fichestu.persistence.repository.UserRepository;
 import com.example.fichestu.persistence.repository.UserWalletRepository;
 import com.example.fichestu.security.CurrentUserService;
 import com.example.fichestu.support.RandomProvider;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -49,6 +51,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,6 +91,12 @@ public class GameService {
     private final GameSessionEventRepository gameSessionEventRepository;
     private final RandomProvider randomProvider;
     private final NotificationService notificationService;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    @Value("${spring.datasource.url:}")
+    private String datasourceUrl;
 
     public GameService(
         CurrentUserService currentUserService,
@@ -173,6 +182,7 @@ public class GameService {
 
     @Transactional
     public EnterBallRoomResponse enterBallRoom() {
+        lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
         marketMaintenanceService.syncMarketState();
 
@@ -214,6 +224,7 @@ public class GameService {
 
     @Transactional
     public EnterBallRoomResponse joinMatch(Integer matchId) {
+        lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
         marketMaintenanceService.syncMarketState();
 
@@ -260,8 +271,7 @@ public class GameService {
         if (newCount >= ROOM_SIZE) {
             resolveMatchmakingIfReady(session);
         } else {
-            session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
-            gameSessionRepository.save(session);
+            ensureMatchmakingDeadline(session);
         }
 
         return new EnterBallRoomResponse(
@@ -1052,6 +1062,20 @@ public class GameService {
             .findFirst();
     }
 
+    private void lockMatchmakingQueue() {
+        if (datasourceUrl == null || !datasourceUrl.toLowerCase(Locale.ROOT).contains("postgresql")) {
+            return;
+        }
+        entityManager.createNativeQuery("select pg_advisory_xact_lock(719373001)").getSingleResult();
+    }
+
+    private void ensureMatchmakingDeadline(GameSessionEntity session) {
+        if (session.getMatchmakingDeadline() == null) {
+            session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
+            gameSessionRepository.save(session);
+        }
+    }
+
     private EnterBallRoomResponse joinAvailableMatchmakingSession(UserEntity user, Integer matchId) {
         GameSessionEntity session = gameSessionRepository.findByMatchIdForUpdate(matchId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match no encontrado"));
@@ -1071,8 +1095,7 @@ public class GameService {
         if (newCount >= ROOM_SIZE) {
             resolveMatchmakingIfReady(session);
         } else {
-            session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
-            gameSessionRepository.save(session);
+            ensureMatchmakingDeadline(session);
         }
 
         return new EnterBallRoomResponse(

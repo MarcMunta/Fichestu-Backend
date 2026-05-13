@@ -164,6 +164,35 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void enterBallRoomReusesOpenMatchmakingRoomWithoutResettingDeadline() throws Exception {
+        createDefaultTokens();
+        List<UserEntity> users = createPlayers(2, new BigDecimal("100.00"));
+
+        String firstBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+        com.fasterxml.jackson.databind.JsonNode firstJson = objectMapper.readTree(firstBody);
+        int matchId = firstJson.get("matchId").asInt();
+        long firstDeadline = firstJson.get("ballRoom").get("selectionDeadlineEpochMs").asLong();
+
+        String secondBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(1))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+        com.fasterxml.jackson.databind.JsonNode secondJson = objectMapper.readTree(secondBody);
+        assertThat(secondJson.get("matchId").asInt()).isEqualTo(matchId);
+        assertThat(secondJson.get("ballRoom").get("selectionDeadlineEpochMs").asLong()).isEqualTo(firstDeadline);
+        assertThat(matchParticipantRepository.countByIdMatchId(matchId)).isEqualTo(2);
+    }
+
+    @Test
     void duplicateBallSelectionIsRejectedAndHappyPathReachesMarketImpactExactlyOnce() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
