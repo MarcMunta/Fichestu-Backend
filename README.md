@@ -91,6 +91,27 @@ Arranque local contra Supabase:
 
 En modo Supabase, Flyway queda apagado por defecto (`FLYWAY_ENABLED=false`) porque el backend usa el role limitado `fichestu_app`. Las migraciones se aplican desde Supabase/Codex con permisos admin, no desde la app.
 
+## Email automatico
+
+El backend puede enviar emails tras eventos clave: registro, movimientos de cuenta y notificaciones importantes.
+
+Variables:
+
+- `EMAIL_NOTIFICATIONS_ENABLED=true`
+- `EMAIL_NOTIFICATIONS_FROM=noreply@tudominio.com`
+- `MAIL_HOST=<smtp-host>`
+- `MAIL_PORT=<smtp-port>`
+- `MAIL_USERNAME=<smtp-user>`
+- `MAIL_PASSWORD=<smtp-password>`
+- `MAIL_SMTP_AUTH=true`
+- `MAIL_SMTP_STARTTLS_ENABLE=true`
+- `MAIL_SMTP_STARTTLS_REQUIRED=true`
+
+La recuperacion de contrasena mantiene su interruptor separado:
+
+- `PASSWORD_RESET_MAIL_ENABLED=true`
+- `PASSWORD_RESET_FROM=noreply@tudominio.com`
+
 ## Base de datos oficial del proyecto
 
 La estructura completa esta en:

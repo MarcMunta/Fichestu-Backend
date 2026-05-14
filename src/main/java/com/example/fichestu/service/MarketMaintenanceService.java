@@ -39,6 +39,7 @@ public class MarketMaintenanceService {
     private final TransactionLogRepository transactionLogRepository;
     private final MarketResetAuditRepository marketResetAuditRepository;
     private final RandomProvider randomProvider;
+    private final AutomatedEmailService automatedEmailService;
 
     @Value("${app.market.reset-zone:Europe/Madrid}")
     private String resetZone;
@@ -53,7 +54,8 @@ public class MarketMaintenanceService {
         UserRepository userRepository,
         TransactionLogRepository transactionLogRepository,
         MarketResetAuditRepository marketResetAuditRepository,
-        RandomProvider randomProvider
+        RandomProvider randomProvider,
+        AutomatedEmailService automatedEmailService
     ) {
         this.tokenRepository = tokenRepository;
         this.tokenPriceHistoryRepository = tokenPriceHistoryRepository;
@@ -62,6 +64,7 @@ public class MarketMaintenanceService {
         this.transactionLogRepository = transactionLogRepository;
         this.marketResetAuditRepository = marketResetAuditRepository;
         this.randomProvider = randomProvider;
+        this.automatedEmailService = automatedEmailService;
     }
 
     @Scheduled(cron = "${app.market.daily-reset-cron:0 0 0 * * *}", zone = "${app.market.reset-zone:Europe/Madrid}")
@@ -204,5 +207,6 @@ public class MarketMaintenanceService {
         log.setAmountFiat(amount.setScale(2, RoundingMode.HALF_UP));
         log.setDescription(description);
         transactionLogRepository.save(log);
+        automatedEmailService.sendTransactionEmail(user, type, log.getAmountFiat(), description);
     }
 }

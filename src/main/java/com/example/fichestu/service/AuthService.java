@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -44,6 +45,7 @@ public class AuthService {
     private final JwtTokenRevocationService jwtTokenRevocationService;
     private final CurrentUserService currentUserService;
     private final PasswordResetMailService passwordResetMailService;
+    private final AutomatedEmailService automatedEmailService;
     private final SecureRandom secureRandom = new SecureRandom();
     private final String googleClientIdWeb = "376595931736-ts5451g69bk8rd6re82o6ln1p28m4i2l.apps.googleusercontent.com";
     private final String googleClientIdAndroid = "376595931736-6oski1i5s8h2dlepv04hhf3upq49jp51.apps.googleusercontent.com";
@@ -59,7 +61,8 @@ public class AuthService {
         JwtService jwtService,
         JwtTokenRevocationService jwtTokenRevocationService,
         CurrentUserService currentUserService,
-        PasswordResetMailService passwordResetMailService
+        PasswordResetMailService passwordResetMailService,
+        AutomatedEmailService automatedEmailService
     ) {
         this.userRepository = userRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -68,6 +71,7 @@ public class AuthService {
         this.jwtTokenRevocationService = jwtTokenRevocationService;
         this.currentUserService = currentUserService;
         this.passwordResetMailService = passwordResetMailService;
+        this.automatedEmailService = automatedEmailService;
     }
 
     @Transactional
@@ -95,6 +99,7 @@ public class AuthService {
         user.setRole("USER");
 
         userRepository.save(user);
+        automatedEmailService.sendRegistrationEmail(user);
 
         return new AuthResponse(null, "Registro completado", true);
     }
@@ -131,6 +136,7 @@ public class AuthService {
             String email = payload.getEmail().toLowerCase();
 
             String picture = (String) payload.get("picture");
+            AtomicBoolean created = new AtomicBoolean(false);
             UserEntity user = userRepository.findByEmail(email).orElseGet(() -> {
                 UserEntity newUser = new UserEntity();
                 newUser.setEmail(email);
@@ -140,8 +146,12 @@ public class AuthService {
                 newUser.setProfilePicUrl(picture);
                 newUser.setFiatBalance(INITIAL_FIAT_BALANCE);
                 newUser.setRole("USER");
+                created.set(true);
                 return userRepository.save(newUser);
             });
+            if (created.get()) {
+                automatedEmailService.sendRegistrationEmail(user);
+            }
 
             return new AuthResponse(jwtService.generateToken(user), "Login con Google exitoso", true);
         } catch (ResponseStatusException ex) {
