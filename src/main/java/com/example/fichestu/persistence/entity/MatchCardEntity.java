@@ -34,6 +34,12 @@ public class MatchCardEntity {
     @Column(name = "card_value")
     private Integer cardValue;
 
+    @Column(name = "round_number")
+    private Integer roundNumber;
+
+    @Column(name = "target_user_id")
+    private Integer targetUserId;
+
     @Column(name = "is_used", nullable = false)
     private Boolean used = Boolean.FALSE;
 
@@ -82,6 +88,22 @@ public class MatchCardEntity {
 
     public void setCardValue(Integer cardValue) {
         this.cardValue = cardValue;
+    }
+
+    public Integer getRoundNumber() {
+        return roundNumber;
+    }
+
+    public void setRoundNumber(Integer roundNumber) {
+        this.roundNumber = roundNumber;
+    }
+
+    public Integer getTargetUserId() {
+        return targetUserId;
+    }
+
+    public void setTargetUserId(Integer targetUserId) {
+        this.targetUserId = targetUserId;
     }
 
     public Boolean getUsed() {

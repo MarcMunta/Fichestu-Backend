@@ -237,6 +237,10 @@ public final class GameDtos {
     public record BattleDto(
         String phase,
         Integer round,
+        Long roundDeadlineEpochMs,
+        Long serverNowEpochMs,
+        Integer submittedActions,
+        Integer aliveHumans,
         String winnerId,
         String winnerName,
         Double winningMultiplier,
@@ -245,6 +249,19 @@ public final class GameDtos {
         List<String> log,
         List<BattlePlayerDto> players
     ) {
+        public BattleDto(
+            String phase,
+            Integer round,
+            String winnerId,
+            String winnerName,
+            Double winningMultiplier,
+            String selectedAction,
+            Boolean interstitialAvailable,
+            List<String> log,
+            List<BattlePlayerDto> players
+        ) {
+            this(phase, round, null, Instant.now().toEpochMilli(), 0, 0, winnerId, winnerName, winningMultiplier, selectedAction, interstitialAvailable, log, players);
+        }
     }
 
     public record BattlePlayerDto(

@@ -164,7 +164,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
-    void enterBallRoomReusesOpenMatchmakingRoomWithoutResettingDeadline() throws Exception {
+    void enterBallRoomReusesOpenMatchmakingRoomAndResetsDeadlineForRealJoin() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(2, new BigDecimal("100.00"));
 
@@ -188,7 +188,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
 
         com.fasterxml.jackson.databind.JsonNode secondJson = objectMapper.readTree(secondBody);
         assertThat(secondJson.get("matchId").asInt()).isEqualTo(matchId);
-        assertThat(secondJson.get("ballRoom").get("selectionDeadlineEpochMs").asLong()).isEqualTo(firstDeadline);
+        assertThat(secondJson.get("ballRoom").get("selectionDeadlineEpochMs").asLong()).isGreaterThanOrEqualTo(firstDeadline);
         assertThat(matchParticipantRepository.countByIdMatchId(matchId)).isEqualTo(2);
     }
 
@@ -277,10 +277,13 @@ class GameIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(post("/api/game/matches/{matchId}/reveal", matchId)
                 .header("Authorization", bearerFor(users.get(0))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.battle.phase").value("READY"));
+            .andExpect(jsonPath("$.battle.phase").value("IN_PROGRESS"));
 
         GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        UserEntity botTarget = userRepository.findById(users.get(1).getUserId()).orElseThrow();
+        botTarget.setRole("BOT");
+        userRepository.save(botTarget);
         for (int i = 0; i < participants.size(); i++) {
             MatchParticipantEntity participant = participants.get(i);
             if (participant.getUser().getUserId().equals(users.get(0).getUserId())) {
