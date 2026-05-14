@@ -88,6 +88,7 @@ public class GameService {
     private final GameSessionEventRepository gameSessionEventRepository;
     private final RandomProvider randomProvider;
     private final NotificationService notificationService;
+    private final AutomatedEmailService automatedEmailService;
 
     public GameService(
         CurrentUserService currentUserService,
@@ -103,7 +104,8 @@ public class GameService {
         MatchCardRepository matchCardRepository,
         GameSessionEventRepository gameSessionEventRepository,
         RandomProvider randomProvider,
-        NotificationService notificationService
+        NotificationService notificationService,
+        AutomatedEmailService automatedEmailService
     ) {
         this.currentUserService = currentUserService;
         this.playerProfileReadService = playerProfileReadService;
@@ -119,6 +121,7 @@ public class GameService {
         this.gameSessionEventRepository = gameSessionEventRepository;
         this.randomProvider = randomProvider;
         this.notificationService = notificationService;
+        this.automatedEmailService = automatedEmailService;
     }
 
     @Transactional
@@ -1330,6 +1333,7 @@ public class GameService {
         log.setAmountFiat(amount.setScale(2, RoundingMode.HALF_UP));
         log.setDescription(description);
         transactionLogRepository.save(log);
+        automatedEmailService.sendTransactionEmail(user, type, log.getAmountFiat(), description);
     }
 
     private TokenEntity resolveToken(String tokenAlias) {

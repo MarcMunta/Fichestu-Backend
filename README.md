@@ -52,6 +52,27 @@ Con los contenedores levantados:
 Esto reconstruye/reinicia el backend cuando hay cambios en el repo.
 Las migraciones nuevas de Flyway se aplican automaticamente al reiniciar.
 
+## Email automatico
+
+El backend puede enviar emails tras eventos clave: registro, movimientos de cuenta y notificaciones importantes.
+
+Variables:
+
+- `EMAIL_NOTIFICATIONS_ENABLED=true`
+- `EMAIL_NOTIFICATIONS_FROM=noreply@tudominio.com`
+- `MAIL_HOST=<smtp-host>`
+- `MAIL_PORT=<smtp-port>`
+- `MAIL_USERNAME=<smtp-user>`
+- `MAIL_PASSWORD=<smtp-password>`
+- `MAIL_SMTP_AUTH=true`
+- `MAIL_SMTP_STARTTLS_ENABLE=true`
+- `MAIL_SMTP_STARTTLS_REQUIRED=true`
+
+La recuperacion de contrasena mantiene su interruptor separado:
+
+- `PASSWORD_RESET_MAIL_ENABLED=true`
+- `PASSWORD_RESET_FROM=noreply@tudominio.com`
+
 ## Base de datos oficial del proyecto
 
 La estructura completa esta en:

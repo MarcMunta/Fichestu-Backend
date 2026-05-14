@@ -8,6 +8,7 @@ import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.repository.NotificationRepository;
 import com.example.fichestu.security.CurrentUserService;
 import java.time.Instant;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,15 +17,25 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class NotificationService {
 
+    private static final Set<String> EMAIL_UPDATE_TYPES = Set.of(
+        "BALL_REVEAL",
+        "BATTLE_FINISHED",
+        "BATTLE_WIN",
+        "MATCHMAKING_CANCELLED"
+    );
+
     private final CurrentUserService currentUserService;
     private final NotificationRepository notificationRepository;
+    private final AutomatedEmailService automatedEmailService;
 
     public NotificationService(
         CurrentUserService currentUserService,
-        NotificationRepository notificationRepository
+        NotificationRepository notificationRepository,
+        AutomatedEmailService automatedEmailService
     ) {
         this.currentUserService = currentUserService;
         this.notificationRepository = notificationRepository;
+        this.automatedEmailService = automatedEmailService;
     }
 
     @Transactional(readOnly = true)
@@ -73,6 +84,9 @@ public class NotificationService {
         notification.setMessage(message);
         notification.setType(type);
         notificationRepository.save(notification);
+        if (EMAIL_UPDATE_TYPES.contains(type)) {
+            automatedEmailService.sendImportantUpdateEmail(user, title, message, type);
+        }
     }
 
     private NotificationListResponse listForUser(Integer userId) {
