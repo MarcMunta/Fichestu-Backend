@@ -98,10 +98,10 @@ public class AuthService {
         user.setFiatBalance(INITIAL_FIAT_BALANCE);
         user.setRole("USER");
 
-        userRepository.save(user);
+        user = userRepository.save(user);
         automatedEmailService.sendRegistrationEmail(user);
 
-        return new AuthResponse(null, "Registro completado", true);
+        return new AuthResponse(jwtService.generateToken(user), "Registro completado", true);
     }
 
     @Transactional(readOnly = true)

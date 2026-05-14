@@ -27,6 +27,7 @@ class AuthIntegrationTests extends IntegrationTestSupport {
                 ))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.token").isString())
             .andExpect(jsonPath("$.message").value("Registro completado"));
 
         var user = userRepository.findByEmail("nuevo@test.com").orElseThrow();
