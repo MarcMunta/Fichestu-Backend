@@ -60,6 +60,27 @@ class AuthIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void loginAcceptsLegacyPlainPasswordAndRehashesIt() throws Exception {
+        var user = createUser("legacy", "legacy@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        user.setPasswordHash("plain123");
+        userRepository.save(user);
+
+        mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "email", "legacy@test.com",
+                    "password", "plain123"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.token").isString());
+
+        var updated = userRepository.findByEmail("legacy@test.com").orElseThrow();
+        assertThat(updated.getPasswordHash()).isNotEqualTo("plain123");
+        assertThat(passwordEncoder.matches("plain123", updated.getPasswordHash())).isTrue();
+    }
+
+    @Test
     void loginRejectsWrongPassword() throws Exception {
         createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
