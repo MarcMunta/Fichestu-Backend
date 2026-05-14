@@ -196,7 +196,15 @@ public class GameService {
 
         Optional<GameSessionEntity> currentSession = findCurrentSession(user.getUserId());
         if (currentSession.isPresent()) {
-            abandonSessionForReentry(user, currentSession.get());
+            GameSessionEntity session = currentSession.get();
+            resolveMatchmakingIfReady(session);
+            return new EnterBallRoomResponse(
+                "Ya estas en una sala activa",
+                true,
+                session.getMatchId(),
+                user.getFiatBalance(),
+                buildBallRoomDto(session, user.getUserId())
+            );
         }
 
         Optional<GameSessionEntity> availableSession = findAvailableMatchmakingSession();
@@ -375,18 +383,31 @@ public class GameService {
         MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
 
-        if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+        if (isRefundableEntryStatus(session.getStatus())) {
             matchParticipantRepository.delete(participant);
             refundBallEntry(user);
-            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado el matchmaking. Entrada devuelta.");
-            closeIfMatchmakingIsEmpty(session);
+            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado antes del battle. Entrada devuelta.");
+            if (STATUS_PICKING.equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
+                UserEntity bot = findReplacementBotUser(session);
+                MatchParticipantEntity replacement = new MatchParticipantEntity();
+                replacement.setId(new MatchParticipantId(matchId, bot.getUserId()));
+                replacement.setMatch(session);
+                replacement.setUser(bot);
+                replacement.setSelectedBallNumber(participant.getSelectedBallNumber());
+                replacement.setMultiplierWon(participant.getMultiplierWon());
+                replacement.setCurrentHp(participant.getCurrentHp());
+                replacement.setAlive(participant.getAlive());
+                matchParticipantRepository.save(replacement);
+            } else {
+                closeIfMatchmakingIsEmpty(session);
+            }
             publishMatchChanged(session.getMatchId(), "MATCH_ABANDONED");
             return new EnterBallRoomResponse(
                 "Has abandonado la sala",
                 true,
                 null,
                 user.getFiatBalance(),
-                new BallRoomDto("WAITING_ENTRY", "Has salido de la sala. Entrada devuelta.", false, null, List.of(), List.of())
+                new BallRoomDto("WAITING_ENTRY", "Has salido antes del battle. Entrada devuelta.", false, null, List.of(), List.of())
             );
         }
 
@@ -557,7 +578,7 @@ public class GameService {
 
         startBattleRoundTimerIfNeeded(session);
         int roundNumber = currentBattleRoundNumber(session);
-        saveBattleAction(session, user, roundNumber, normalizeAction(action), normalizeCardPower(cardPower), targetUserId);
+        boolean saved = saveBattleAction(session, user, roundNumber, normalizeAction(action), normalizeCardPower(cardPower), targetUserId);
 
         boolean resolved = resolveBattleRoundIfReady(session, selectedTokenAlias);
         publishMatchChanged(session.getMatchId(), resolved ? "BATTLE_ROUND_RESOLVED" : "BATTLE_ACTION_SUBMITTED");
@@ -565,7 +586,7 @@ public class GameService {
         return buildMatchStateResponse(
             session,
             user.getUserId(),
-            resolved ? "Ronda resuelta" : "Accion guardada. Esperando al resto de jugadores.",
+            resolved ? "Ronda resuelta" : (saved ? "Carta preparada. Esperando al resto de jugadores." : "Ya tienes una carta preparada para esta ronda."),
             normalizeAction(action)
         );
     }
@@ -765,10 +786,15 @@ public class GameService {
         return (int) gameSessionEventRepository.countByMatchMatchIdAndEventType(session.getMatchId(), EVENT_ROUND_SUMMARY) + 1;
     }
 
-    private void saveBattleAction(GameSessionEntity session, UserEntity user, int roundNumber, String action, int cardPower, Integer targetUserId) {
-        MatchCardEntity card = matchCardRepository.findByMatchMatchIdAndRoundNumberAndOwnerUserId(session.getMatchId(), roundNumber, user.getUserId()).stream()
+    private boolean saveBattleAction(GameSessionEntity session, UserEntity user, int roundNumber, String action, int cardPower, Integer targetUserId) {
+        Optional<MatchCardEntity> existing = matchCardRepository.findByMatchMatchIdAndRoundNumberAndOwnerUserId(session.getMatchId(), roundNumber, user.getUserId()).stream()
             .max(Comparator.comparing(MatchCardEntity::getCardId))
-            .orElseGet(MatchCardEntity::new);
+            .filter(card -> !Boolean.TRUE.equals(card.getUsed()));
+        if (existing.isPresent()) {
+            return false;
+        }
+
+        MatchCardEntity card = new MatchCardEntity();
         card.setMatch(session);
         card.setOwner(user);
         card.setCardType(action);
@@ -777,6 +803,7 @@ public class GameService {
         card.setTargetUserId(targetUserId);
         card.setUsed(false);
         matchCardRepository.save(card);
+        return true;
     }
 
     @Transactional
@@ -1072,9 +1099,11 @@ public class GameService {
             : round;
         Integer submittedActions = null;
         Integer aliveHumans = null;
+        Boolean userActionSubmitted = false;
         if ("IN_PROGRESS".equalsIgnoreCase(session.getStatus())) {
             int currentRound = currentBattleRoundNumber(session);
-            submittedActions = (int) matchCardRepository.findByMatchMatchIdAndRoundNumber(session.getMatchId(), currentRound).stream()
+            List<MatchCardEntity> currentRoundCards = matchCardRepository.findByMatchMatchIdAndRoundNumber(session.getMatchId(), currentRound);
+            submittedActions = (int) currentRoundCards.stream()
                 .filter(card -> card.getOwner() != null && !isBotUser(card.getOwner()))
                 .map(card -> card.getOwner().getUserId())
                 .distinct()
@@ -1083,6 +1112,9 @@ public class GameService {
                 .filter(participant -> Boolean.TRUE.equals(participant.getAlive()))
                 .filter(participant -> !isBotUser(participant.getUser()))
                 .count();
+            userActionSubmitted = currentRoundCards.stream()
+                .filter(card -> card.getOwner() != null)
+                .anyMatch(card -> card.getOwner().getUserId().equals(userId) && !Boolean.TRUE.equals(card.getUsed()));
         }
         Long roundDeadlineEpochMs = session.getBattleRoundDeadline() == null ? null : session.getBattleRoundDeadline().toEpochMilli();
 
@@ -1093,6 +1125,7 @@ public class GameService {
             Instant.now().toEpochMilli(),
             submittedActions,
             aliveHumans,
+            userActionSubmitted,
             winnerId,
             winnerName,
             winningMultiplier,
@@ -1249,11 +1282,24 @@ public class GameService {
             return;
         }
 
-        if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus()) || "WAITING".equalsIgnoreCase(session.getStatus())) {
+        if (isRefundableEntryStatus(session.getStatus())) {
             matchParticipantRepository.delete(participant);
             refundBallEntry(user);
             logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado una sala anterior al volver a entrar. Entrada devuelta.");
-            closeIfMatchmakingIsEmpty(session);
+            if (STATUS_PICKING.equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
+                UserEntity bot = findReplacementBotUser(session);
+                MatchParticipantEntity replacement = new MatchParticipantEntity();
+                replacement.setId(new MatchParticipantId(session.getMatchId(), bot.getUserId()));
+                replacement.setMatch(session);
+                replacement.setUser(bot);
+                replacement.setSelectedBallNumber(participant.getSelectedBallNumber());
+                replacement.setMultiplierWon(participant.getMultiplierWon());
+                replacement.setCurrentHp(participant.getCurrentHp());
+                replacement.setAlive(participant.getAlive());
+                matchParticipantRepository.save(replacement);
+            } else {
+                closeIfMatchmakingIsEmpty(session);
+            }
             publishMatchChanged(session.getMatchId(), "MATCH_ABANDONED");
             return;
         }
@@ -1451,6 +1497,13 @@ public class GameService {
         user.setFiatBalance(user.getFiatBalance().add(BALL_ENTRY_COST).setScale(2, RoundingMode.HALF_UP));
         userRepository.save(user);
         logTransaction(user, "BALL_ENTRY_REFUND", BALL_ENTRY_COST, "Devolucion por cancelar matchmaking");
+    }
+
+    private boolean isRefundableEntryStatus(String status) {
+        return STATUS_MATCHMAKING.equalsIgnoreCase(status)
+            || "WAITING".equalsIgnoreCase(status)
+            || STATUS_PICKING.equalsIgnoreCase(status)
+            || "READY_REVEAL".equalsIgnoreCase(status);
     }
 
     private void persistCard(GameSessionEntity session, UserEntity owner, String cardType) {

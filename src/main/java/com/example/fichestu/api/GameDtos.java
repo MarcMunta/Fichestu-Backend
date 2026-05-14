@@ -241,6 +241,7 @@ public final class GameDtos {
         Long serverNowEpochMs,
         Integer submittedActions,
         Integer aliveHumans,
+        Boolean userActionSubmitted,
         String winnerId,
         String winnerName,
         Double winningMultiplier,
@@ -260,7 +261,7 @@ public final class GameDtos {
             List<String> log,
             List<BattlePlayerDto> players
         ) {
-            this(phase, round, null, Instant.now().toEpochMilli(), 0, 0, winnerId, winnerName, winningMultiplier, selectedAction, interstitialAvailable, log, players);
+            this(phase, round, null, Instant.now().toEpochMilli(), 0, 0, false, winnerId, winnerName, winningMultiplier, selectedAction, interstitialAvailable, log, players);
         }
     }
 
