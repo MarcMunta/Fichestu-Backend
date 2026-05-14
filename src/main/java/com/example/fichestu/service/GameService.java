@@ -332,7 +332,8 @@ public class GameService {
         MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
         matchParticipantRepository.delete(participant);
-        logEvent(session, "MATCHMAKING_ABANDONED", user.getUsername() + " ha abandonado el matchmaking.");
+        refundBallEntry(user);
+        logEvent(session, "MATCHMAKING_ABANDONED", user.getUsername() + " ha abandonado el matchmaking. Entrada devuelta.");
         closeIfMatchmakingIsEmpty(session);
 
         return new EnterBallRoomResponse(
@@ -340,7 +341,7 @@ public class GameService {
             true,
             null,
             user.getFiatBalance(),
-            new BallRoomDto("WAITING_ENTRY", "Has abandonado la sala. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
+            new BallRoomDto("WAITING_ENTRY", "Has abandonado la sala. Entrada devuelta.", false, null, List.of(), List.of())
         );
     }
 
@@ -364,14 +365,15 @@ public class GameService {
 
         if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
             matchParticipantRepository.delete(participant);
-            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado el matchmaking.");
+            refundBallEntry(user);
+            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado el matchmaking. Entrada devuelta.");
             closeIfMatchmakingIsEmpty(session);
             return new EnterBallRoomResponse(
                 "Has abandonado la sala",
                 true,
                 null,
                 user.getFiatBalance(),
-                new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
+                new BallRoomDto("WAITING_ENTRY", "Has salido de la sala. Entrada devuelta.", false, null, List.of(), List.of())
             );
         }
 
@@ -1130,7 +1132,8 @@ public class GameService {
 
         if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus()) || "WAITING".equalsIgnoreCase(session.getStatus())) {
             matchParticipantRepository.delete(participant);
-            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado una sala anterior al volver a entrar.");
+            refundBallEntry(user);
+            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado una sala anterior al volver a entrar. Entrada devuelta.");
             closeIfMatchmakingIsEmpty(session);
             return;
         }

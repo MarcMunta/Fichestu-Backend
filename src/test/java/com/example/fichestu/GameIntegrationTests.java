@@ -193,6 +193,48 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void leavingMatchmakingThroughAbandonRefundsEntry() throws Exception {
+        createDefaultTokens();
+        UserEntity user = createUser("leaver", "leaver@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/abandon", matchId)
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(100.00));
+
+        UserEntity refreshed = userRepository.findById(user.getUserId()).orElseThrow();
+        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+    }
+
+    @Test
+    void reenteringWhileInMatchmakingDoesNotChargeTwice() throws Exception {
+        createDefaultTokens();
+        UserEntity user = createUser("reenter", "reenter@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00));
+
+        mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00));
+
+        UserEntity refreshed = userRepository.findById(user.getUserId()).orElseThrow();
+        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(new BigDecimal("90.00"));
+    }
+
+    @Test
     void duplicateBallSelectionIsRejectedAndHappyPathReachesMarketImpactExactlyOnce() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
