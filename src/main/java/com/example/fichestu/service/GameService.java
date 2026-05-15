@@ -72,6 +72,7 @@ public class GameService {
     private static final int BALL_COUNT = 50;
     private static final int INITIAL_HP = 50;
     private static final int MATCHMAKING_SECONDS = 15;
+    private static final int BALL_SELECTION_SECONDS = 20;
     private static final int BATTLE_ROUND_SECONDS = 25;
     private static final String TYPE_REWARDED = "REWARDED";
     private static final String EVENT_ROUND_SUMMARY = "ROUND_SUMMARY";
@@ -473,6 +474,9 @@ public class GameService {
 
         GameSessionEntity session = sessionOptional.get();
         resolveMatchmakingIfReady(session);
+        if (resolveBallSelectionIfReady(session)) {
+            publishMatchChanged(session.getMatchId(), "BALL_SELECTION_READY");
+        }
         if (resolveBattleRoundIfReady(session, null)) {
             publishMatchChanged(session.getMatchId(), "BATTLE_ROUND_RESOLVED");
         }
@@ -484,6 +488,7 @@ public class GameService {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
         resolveMatchmakingIfReady(session);
+        resolveBallSelectionIfReady(session);
 
         if (!STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La sala no esta en fase de seleccion");
@@ -538,6 +543,7 @@ public class GameService {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
         resolveMatchmakingIfReady(session);
+        resolveBallSelectionIfReady(session);
 
         if (!"READY_REVEAL".equalsIgnoreCase(session.getStatus()) && !"REVEALED".equalsIgnoreCase(session.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Aun no se puede revelar");
@@ -1362,9 +1368,32 @@ public class GameService {
 
         assignBotBallPicks(session, participants);
         session.setStatus(STATUS_PICKING);
+        session.setMatchmakingDeadline(Instant.now().plusSeconds(BALL_SELECTION_SECONDS));
         gameSessionRepository.save(session);
         logEvent(session, "SELECTION_STARTED", "Matchmaking completado. Empieza la seleccion de bolas.");
         publishMatchChanged(session.getMatchId(), "SELECTION_STARTED");
+    }
+
+    private boolean resolveBallSelectionIfReady(GameSessionEntity session) {
+        if (!STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
+            return false;
+        }
+
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        boolean allPicked = participants.size() == ROOM_SIZE
+            && participants.stream().allMatch(participant -> participant.getSelectedBallNumber() != null);
+        boolean expired = session.getMatchmakingDeadline() != null && !session.getMatchmakingDeadline().isAfter(Instant.now());
+        if (!allPicked && !expired) {
+            return false;
+        }
+
+        if (!allPicked) {
+            assignMissingBallPicks(session, participants);
+        }
+        session.setStatus("READY_REVEAL");
+        gameSessionRepository.save(session);
+        logEvent(session, "READY_REVEAL", "Seleccion de bolas completada. Multiplicadores listos para revelar.");
+        return true;
     }
 
     private void fillRoomWithBots(GameSessionEntity session, List<MatchParticipantEntity> participants) {
@@ -1429,6 +1458,29 @@ public class GameService {
             }
         }
         logEvent(session, "BOT_BALLS_PICKED", "Los bots han elegido sus bolas automaticamente.");
+    }
+
+    private void assignMissingBallPicks(GameSessionEntity session, List<MatchParticipantEntity> participants) {
+        Set<Integer> pickedNumbers = participants.stream()
+            .map(MatchParticipantEntity::getSelectedBallNumber)
+            .filter(value -> value != null)
+            .collect(HashSet::new, HashSet::add, HashSet::addAll);
+
+        int nextBall = 1;
+        for (MatchParticipantEntity participant : participants) {
+            if (participant.getSelectedBallNumber() != null) {
+                continue;
+            }
+            while (pickedNumbers.contains(nextBall) && nextBall <= BALL_COUNT) {
+                nextBall++;
+            }
+            if (nextBall <= BALL_COUNT) {
+                participant.setSelectedBallNumber(nextBall);
+                pickedNumbers.add(nextBall);
+                matchParticipantRepository.save(participant);
+            }
+        }
+        logEvent(session, "MISSING_BALLS_PICKED", "El servidor asigno automaticamente las bolas pendientes.");
     }
 
     private void closeIfMatchmakingIsEmpty(GameSessionEntity session) {

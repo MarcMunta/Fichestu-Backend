@@ -235,6 +235,63 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void ballPickingUsesSharedServerDeadlineAndAssignsMissingPlayersOnTimeout() throws Exception {
+        createDefaultTokens();
+        List<UserEntity> users = createPlayers(2, new BigDecimal("100.00"));
+
+        String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
+
+        mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(1))))
+            .andExpect(status().isOk());
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setMatchmakingDeadline(Instant.now().minusSeconds(1));
+        gameSessionRepository.save(session);
+
+        String pickingBody = mockMvc.perform(get("/api/game/match/state")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.phase").value("PICKING"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+        long selectionDeadline = objectMapper.readTree(pickingBody).get("ballRoom").get("selectionDeadlineEpochMs").asLong();
+        assertThat(selectionDeadline).isGreaterThan(Instant.now().toEpochMilli());
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/pick-ball", matchId)
+                .header("Authorization", bearerFor(users.get(0)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("ballId", 9))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.balls[8].pickedBy").value(String.valueOf(users.get(0).getUserId())));
+
+        session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setMatchmakingDeadline(Instant.now().minusSeconds(1));
+        gameSessionRepository.save(session);
+
+        mockMvc.perform(get("/api/game/match/state")
+                .header("Authorization", bearerFor(users.get(1))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.phase").value("PICKING"))
+            .andExpect(jsonPath("$.ballRoom.canRevealBattle").value(true));
+
+        MatchParticipantEntity secondPlayer = matchParticipantRepository.findByIdMatchId(matchId)
+            .stream()
+            .filter(participant -> participant.getUser().getUserId().equals(users.get(1).getUserId()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(secondPlayer.getSelectedBallNumber()).isNotNull();
+    }
+
+    @Test
     void leavingBeforeBattleStartsRefundsEntry() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
