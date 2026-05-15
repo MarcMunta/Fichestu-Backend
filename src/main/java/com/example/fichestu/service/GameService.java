@@ -213,14 +213,13 @@ public class GameService {
             return joinAvailableMatchmakingSession(user, availableSession.get().getMatchId());
         }
 
-        ensureSufficientBalance(user, "entrar en la sala");
-        debitBallEntry(user);
-
         GameSessionEntity session = new GameSessionEntity();
         session.setStatus(STATUS_MATCHMAKING);
         session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
         session = gameSessionRepository.save(session);
 
+        ensureSufficientBalance(user, "entrar en la sala");
+        debitBallEntry(user, session.getMatchId());
         createParticipant(session, user);
         logEvent(session, "MATCHMAKING_STARTED", user.getUsername() + " ha pagado la entrada y entra en matchmaking.");
         notificationService.create(
@@ -275,7 +274,7 @@ public class GameService {
         }
 
         ensureSufficientBalance(user, "unirte a la sala");
-        debitBallEntry(user);
+        debitBallEntry(user, matchId);
         createParticipant(session, user);
 
         long newCount = matchParticipantRepository.countByIdMatchId(matchId);
@@ -304,17 +303,21 @@ public class GameService {
 
     @Transactional
     public EnterBallRoomResponse cancelMatchmaking(Integer matchId) {
+        lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
 
         if (!STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El matchmaking ya no se puede cancelar");
+            if (isRefundableEntryStatus(session.getStatus())) {
+                return abandonMatch(matchId);
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La partida ya no se puede cancelar");
         }
 
         MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
         matchParticipantRepository.delete(participant);
-        refundBallEntry(user);
+        refundBallEntry(user, matchId);
         logEvent(session, "MATCHMAKING_CANCELLED", user.getUsername() + " ha cancelado el matchmaking.");
         notificationService.create(
             user,
@@ -336,6 +339,7 @@ public class GameService {
 
     @Transactional
     public EnterBallRoomResponse abandonMatchmaking(Integer matchId) {
+        lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
 
@@ -352,7 +356,7 @@ public class GameService {
         MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
         matchParticipantRepository.delete(participant);
-        refundBallEntry(user);
+        refundBallEntry(user, matchId);
         logEvent(session, "MATCHMAKING_ABANDONED", user.getUsername() + " ha abandonado el matchmaking. Entrada devuelta.");
         closeIfMatchmakingIsEmpty(session);
         publishMatchChanged(session.getMatchId(), "MATCHMAKING_ABANDONED");
@@ -368,6 +372,7 @@ public class GameService {
 
     @Transactional
     public EnterBallRoomResponse abandonMatch(Integer matchId) {
+        lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
 
@@ -386,7 +391,7 @@ public class GameService {
 
         if (isRefundableEntryStatus(session.getStatus())) {
             matchParticipantRepository.delete(participant);
-            refundBallEntry(user);
+            refundBallEntry(user, matchId);
             logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado antes del battle. Entrada devuelta.");
             if (STATUS_PICKING.equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
                 UserEntity bot = findReplacementBotUser(session);
@@ -1246,7 +1251,7 @@ public class GameService {
         }
 
         ensureSufficientBalance(user, "unirte a la sala");
-        debitBallEntry(user);
+        debitBallEntry(user, matchId);
         createParticipant(session, user);
 
         long newCount = matchParticipantRepository.countByIdMatchId(matchId);
@@ -1290,7 +1295,7 @@ public class GameService {
 
         if (isRefundableEntryStatus(session.getStatus())) {
             matchParticipantRepository.delete(participant);
-            refundBallEntry(user);
+            refundBallEntry(user, session.getMatchId());
             logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado una sala anterior al volver a entrar. Entrada devuelta.");
             if (STATUS_PICKING.equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
                 UserEntity bot = findReplacementBotUser(session);
@@ -1428,7 +1433,7 @@ public class GameService {
     }
 
     private UserEntity findReplacementBotUser(GameSessionEntity session) {
-        for (int slot = 1; slot < ROOM_SIZE; slot++) {
+        for (int slot = 1; slot <= ROOM_SIZE; slot++) {
             UserEntity bot = findOrCreateBotUser(slot);
             if (!matchParticipantRepository.existsByIdMatchIdAndIdUserId(session.getMatchId(), bot.getUserId())) {
                 return bot;
@@ -1539,16 +1544,32 @@ public class GameService {
         }
     }
 
-    private void debitBallEntry(UserEntity user) {
+    private void debitBallEntry(UserEntity user, Integer matchId) {
+        String description = entryTransactionDescription(matchId);
+        if (transactionLogRepository.existsByUserUserIdAndTypeAndDescription(user.getUserId(), "BALL_ENTRY", description)) {
+            return;
+        }
         user.setFiatBalance(user.getFiatBalance().subtract(BALL_ENTRY_COST).setScale(2, RoundingMode.HALF_UP));
         userRepository.save(user);
-        logTransaction(user, "BALL_ENTRY", BALL_ENTRY_COST.negate(), "Entrada a sala de bolas");
+        logTransaction(user, "BALL_ENTRY", BALL_ENTRY_COST.negate(), description);
     }
 
-    private void refundBallEntry(UserEntity user) {
+    private void refundBallEntry(UserEntity user, Integer matchId) {
+        String description = refundTransactionDescription(matchId);
+        if (transactionLogRepository.existsByUserUserIdAndTypeAndDescription(user.getUserId(), "BALL_ENTRY_REFUND", description)) {
+            return;
+        }
         user.setFiatBalance(user.getFiatBalance().add(BALL_ENTRY_COST).setScale(2, RoundingMode.HALF_UP));
         userRepository.save(user);
-        logTransaction(user, "BALL_ENTRY_REFUND", BALL_ENTRY_COST, "Devolucion por cancelar matchmaking");
+        logTransaction(user, "BALL_ENTRY_REFUND", BALL_ENTRY_COST, description);
+    }
+
+    private String entryTransactionDescription(Integer matchId) {
+        return "Entrada a sala de bolas #" + matchId;
+    }
+
+    private String refundTransactionDescription(Integer matchId) {
+        return "Devolucion entrada sala #" + matchId;
     }
 
     private boolean isRefundableEntryStatus(String status) {

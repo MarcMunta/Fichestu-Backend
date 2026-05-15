@@ -235,6 +235,43 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void cancelAfterMatchmakingAdvancesStillRefundsEntry() throws Exception {
+        createDefaultTokens();
+        UserEntity user = createUser("latecancel", "latecancel@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setMatchmakingDeadline(Instant.now().minusSeconds(1));
+        gameSessionRepository.save(session);
+
+        mockMvc.perform(get("/api/game/match/state")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.phase").value("PICKING"));
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/matchmaking/cancel", matchId)
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(100.00));
+
+        UserEntity refreshed = userRepository.findById(user.getUserId()).orElseThrow();
+        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+        assertThat(transactionLogRepository.existsByUserUserIdAndTypeAndDescription(
+            user.getUserId(),
+            "BALL_ENTRY_REFUND",
+            "Devolucion entrada sala #" + matchId
+        )).isTrue();
+    }
+
+    @Test
     void ballPickingUsesSharedServerDeadlineAndAssignsMissingPlayersOnTimeout() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(2, new BigDecimal("100.00"));
