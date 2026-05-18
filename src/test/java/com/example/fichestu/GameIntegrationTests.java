@@ -2,6 +2,7 @@ package com.example.fichestu;
 
 import com.example.fichestu.persistence.entity.GameSessionEntity;
 import com.example.fichestu.persistence.entity.MatchParticipantEntity;
+import com.example.fichestu.persistence.entity.TokenPriceHistoryEntity;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.entity.UserWalletEntity;
 import com.example.fichestu.service.MarketMaintenanceService;
@@ -80,6 +81,43 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 1))))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.message").value("Saldo insuficiente para comprar"));
+    }
+
+    @Test
+    void totalBalanceTracksOwnedTokenMarketValueWithoutLiquidatingHoldings() throws Exception {
+        createDefaultTokens();
+        markDailyResetExecuted(currentBusinessDate());
+        var user = createUser("portfolio", "portfolio@test.com", "secret123", "USER", new BigDecimal("200.00"));
+
+        mockMvc.perform(post("/api/game/market/buy")
+                .header("Authorization", bearerFor(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 2))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(100.00))
+            .andExpect(jsonPath("$.portfolioValue").value(100.00))
+            .andExpect(jsonPath("$.totalBalance").value(200.00))
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(100.00))
+            .andExpect(jsonPath("$.tokens[0].portfolioWeightPercent").value(100.00));
+
+        var red = findTokenByName("Ficha Roja");
+        red.setCurrentPrice(new BigDecimal("25.00"));
+        red.setLastUpdate(Instant.now());
+        tokenRepository.save(red);
+
+        TokenPriceHistoryEntity history = new TokenPriceHistoryEntity();
+        history.setToken(red);
+        history.setPrice(new BigDecimal("25.00"));
+        tokenPriceHistoryRepository.save(history);
+
+        mockMvc.perform(get("/api/game/market")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(100.00))
+            .andExpect(jsonPath("$.portfolioValue").value(50.00))
+            .andExpect(jsonPath("$.totalBalance").value(150.00))
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(50.00))
+            .andExpect(jsonPath("$.tokens[0].holdingChangeValue").value(-50.00));
     }
 
     @Test

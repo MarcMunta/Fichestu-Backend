@@ -18,6 +18,8 @@ public final class GameDtos {
         Integer userId,
         String playerName,
         BigDecimal cashBalance,
+        BigDecimal portfolioValue,
+        BigDecimal totalBalance,
         Integer rewardedCooldownSec,
         List<TokenDto> tokens,
         List<BadgeDto> badges,
@@ -33,6 +35,9 @@ public final class GameDtos {
         BigDecimal currentPrice,
         BigDecimal previousPrice,
         BigDecimal holdings,
+        BigDecimal holdingValue,
+        BigDecimal holdingChangeValue,
+        BigDecimal portfolioWeightPercent,
         List<BigDecimal> history
     ) {
     }
@@ -83,6 +88,7 @@ public final class GameDtos {
         String message,
         Boolean success,
         BigDecimal cashBalance,
+        BigDecimal portfolioValue,
         BigDecimal totalBalance,
         List<TokenDto> tokens
     ) {
@@ -92,6 +98,7 @@ public final class GameDtos {
         String message,
         Boolean success,
         BigDecimal cashBalance,
+        BigDecimal portfolioValue,
         BigDecimal totalBalance,
         Integer rewardedCooldownSec,
         Integer rewardedAdsClaimed,
