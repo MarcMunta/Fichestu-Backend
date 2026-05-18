@@ -472,7 +472,7 @@ public class GameService {
     @Transactional
     public MatchStateResponse currentMatchState() {
         UserEntity user = currentUserService.requireUserEntity();
-        Optional<GameSessionEntity> sessionOptional = findCurrentSession(user.getUserId());
+        Optional<GameSessionEntity> sessionOptional = findCurrentOrVisibleBattleSession(user.getUserId());
 
         if (sessionOptional.isEmpty()) {
             return new MatchStateResponse(
@@ -1278,6 +1278,21 @@ public class GameService {
                 boolean battleAlreadyStarted = "IN_PROGRESS".equalsIgnoreCase(match.getStatus())
                     || "FINISHED".equalsIgnoreCase(match.getStatus());
                 return !battleAlreadyStarted || Boolean.TRUE.equals(participant.getAlive());
+            })
+            .map(MatchParticipantEntity::getMatch)
+            .max(Comparator.comparing(GameSessionEntity::getMatchId));
+    }
+
+    private Optional<GameSessionEntity> findCurrentOrVisibleBattleSession(Integer userId) {
+        return matchParticipantRepository.findByIdUserId(userId).stream()
+            .filter(participant -> {
+                GameSessionEntity match = participant.getMatch();
+                if (match == null || STATUS_CLOSED.equalsIgnoreCase(match.getStatus())) {
+                    return false;
+                }
+                boolean visibleBattle = "IN_PROGRESS".equalsIgnoreCase(match.getStatus())
+                    || "FINISHED".equalsIgnoreCase(match.getStatus());
+                return visibleBattle || Boolean.TRUE.equals(participant.getAlive());
             })
             .map(MatchParticipantEntity::getMatch)
             .max(Comparator.comparing(GameSessionEntity::getMatchId));
