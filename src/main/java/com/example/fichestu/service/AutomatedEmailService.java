@@ -3,6 +3,7 @@ package com.example.fichestu.service;
 import com.example.fichestu.persistence.entity.UserEntity;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -20,15 +21,18 @@ public class AutomatedEmailService {
     private static final Logger log = LoggerFactory.getLogger(AutomatedEmailService.class);
 
     private final JavaMailSender mailSender;
+    private final ResendEmailClient resendEmailClient;
     private final boolean enabled;
     private final String fromAddress;
 
     public AutomatedEmailService(
         ObjectProvider<JavaMailSender> mailSenderProvider,
+        ObjectProvider<ResendEmailClient> resendEmailClientProvider,
         @Value("${app.email.enabled:false}") boolean enabled,
         @Value("${app.email.from:noreply@fichestu.local}") String fromAddress
     ) {
         this.mailSender = mailSenderProvider.getIfAvailable();
+        this.resendEmailClient = resendEmailClientProvider.getIfAvailable();
         this.enabled = enabled;
         this.fromAddress = fromAddress;
     }
@@ -103,8 +107,22 @@ public class AutomatedEmailService {
     }
 
     private void sendBestEffort(String to, String subject, String body, String eventType) {
-        if (!enabled || mailSender == null) {
+        if (!enabled) {
             log.debug("Automated email skipped for {} to {} because email is disabled", eventType, to);
+            return;
+        }
+
+        if (resendEmailClient != null && resendEmailClient.isConfigured()) {
+            try {
+                resendEmailClient.sendTextEmail(to, subject, body, idempotencyKey(eventType, to, subject));
+            } catch (EmailDeliveryException ex) {
+                log.warn("Automated email {} could not be sent to {} through Resend: {}", eventType, to, ex.getMessage());
+            }
+            return;
+        }
+
+        if (mailSender == null) {
+            log.debug("Automated email skipped for {} to {} because no email sender is configured", eventType, to);
             return;
         }
 
@@ -123,5 +141,9 @@ public class AutomatedEmailService {
 
     private String formatMoney(BigDecimal amount) {
         return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String idempotencyKey(String eventType, String to, String subject) {
+        return eventType + "-" + UUID.randomUUID();
     }
 }

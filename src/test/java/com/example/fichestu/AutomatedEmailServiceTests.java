@@ -20,7 +20,12 @@ class AutomatedEmailServiceTests {
     @Test
     void registrationEmailIsSentWhenEnabled() {
         JavaMailSender mailSender = mock(JavaMailSender.class);
-        AutomatedEmailService service = new AutomatedEmailService(providerFor(mailSender), true, "noreply@test.local");
+        AutomatedEmailService service = new AutomatedEmailService(
+            providerFor(mailSender),
+            providerFor(null),
+            true,
+            "noreply@test.local"
+        );
 
         service.sendRegistrationEmail(user());
 
@@ -30,7 +35,12 @@ class AutomatedEmailServiceTests {
     @Test
     void transactionEmailContainsMovementDetails() {
         CapturingMailSender mailSender = new CapturingMailSender();
-        AutomatedEmailService service = new AutomatedEmailService(providerFor(mailSender), true, "noreply@test.local");
+        AutomatedEmailService service = new AutomatedEmailService(
+            providerFor(mailSender),
+            providerFor(null),
+            true,
+            "noreply@test.local"
+        );
 
         service.sendTransactionEmail(user(), "BUY", new BigDecimal("-50.00"), "Compra de 1 FRO");
 
@@ -44,7 +54,12 @@ class AutomatedEmailServiceTests {
     @Test
     void emailIsSkippedWhenDisabled() {
         JavaMailSender mailSender = mock(JavaMailSender.class);
-        AutomatedEmailService service = new AutomatedEmailService(providerFor(mailSender), false, "noreply@test.local");
+        AutomatedEmailService service = new AutomatedEmailService(
+            providerFor(mailSender),
+            providerFor(null),
+            false,
+            "noreply@test.local"
+        );
 
         service.sendImportantUpdateEmail(user(), "Aviso", "Mensaje", "SYSTEM");
 
@@ -52,9 +67,9 @@ class AutomatedEmailServiceTests {
     }
 
     @SuppressWarnings("unchecked")
-    private ObjectProvider<JavaMailSender> providerFor(JavaMailSender mailSender) {
-        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
-        when(provider.getIfAvailable()).thenReturn(mailSender);
+    private <T> ObjectProvider<T> providerFor(T value) {
+        ObjectProvider<T> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(value);
         return provider;
     }
 
