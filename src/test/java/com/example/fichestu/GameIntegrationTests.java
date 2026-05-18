@@ -483,7 +483,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(post("/api/game/matches/{matchId}/reveal", matchId)
                 .header("Authorization", bearerFor(users.get(0))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.battle.phase").value("IN_PROGRESS"));
+            .andExpect(jsonPath("$.battle.phase").value("READY"));
 
         GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);

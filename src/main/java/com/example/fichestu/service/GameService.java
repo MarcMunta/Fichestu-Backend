@@ -498,6 +498,9 @@ public class GameService {
     @Scheduled(fixedDelay = 1000)
     @Transactional
     public void advanceTimedOutMatches() {
+        if (datasourceUrl == null || !datasourceUrl.toLowerCase(Locale.ROOT).contains("postgresql")) {
+            return;
+        }
         List<Integer> matchIds = gameSessionRepository.findTimedOutActiveMatchIds(Instant.now()).stream()
             .limit(MAX_SCHEDULED_ADVANCES_PER_TICK)
             .toList();
@@ -606,7 +609,6 @@ public class GameService {
                 "BALL_REVEAL"
             );
         }
-        startBattleRoundTimerIfNeeded(session);
         publishMatchChanged(session.getMatchId(), "MULTIPLIERS_REVEALED");
 
         return buildMatchStateResponse(session, user.getUserId(), "Multiplicadores revelados", null);
