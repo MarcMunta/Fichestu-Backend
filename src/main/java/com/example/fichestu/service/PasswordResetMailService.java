@@ -17,17 +17,20 @@ public class PasswordResetMailService {
     private static final Logger log = LoggerFactory.getLogger(PasswordResetMailService.class);
 
     private final JavaMailSender mailSender;
+    private final GoogleAppsScriptEmailClient googleAppsScriptEmailClient;
     private final ResendEmailClient resendEmailClient;
     private final boolean mailEnabled;
     private final String fromAddress;
 
     public PasswordResetMailService(
         ObjectProvider<JavaMailSender> mailSenderProvider,
+        ObjectProvider<GoogleAppsScriptEmailClient> googleAppsScriptEmailClientProvider,
         ObjectProvider<ResendEmailClient> resendEmailClientProvider,
         @Value("${app.password-reset.mail-enabled:false}") boolean mailEnabled,
         @Value("${app.password-reset.from:noreply@fichestu.local}") String fromAddress
     ) {
         this.mailSender = mailSenderProvider.getIfAvailable();
+        this.googleAppsScriptEmailClient = googleAppsScriptEmailClientProvider.getIfAvailable();
         this.resendEmailClient = resendEmailClientProvider.getIfAvailable();
         this.mailEnabled = mailEnabled;
         this.fromAddress = fromAddress;
@@ -48,13 +51,21 @@ public class PasswordResetMailService {
             Este codigo caduca en %d minutos. Si no has sido tu, ignora este correo.
             """.formatted(token, expirationMinutes);
 
+        if (googleAppsScriptEmailClient != null && googleAppsScriptEmailClient.isConfigured()) {
+            try {
+                googleAppsScriptEmailClient.sendTextEmail(email, subject, body, "password-reset-" + email + "-" + token);
+                return;
+            } catch (EmailDeliveryException ex) {
+                log.warn("Password reset email could not be sent to {} through Google Apps Script: {}", email, ex.getMessage());
+            }
+        }
+
         if (resendEmailClient != null && resendEmailClient.isConfigured()) {
             try {
                 resendEmailClient.sendTextEmail(email, subject, body, "password-reset-" + email + "-" + token);
                 return;
             } catch (EmailDeliveryException ex) {
                 log.warn("Password reset email could not be sent to {} through Resend: {}", email, ex.getMessage());
-                throw recoveryEmailFailure();
             }
         }
 

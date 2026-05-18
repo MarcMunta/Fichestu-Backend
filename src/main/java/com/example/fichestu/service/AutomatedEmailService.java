@@ -21,17 +21,20 @@ public class AutomatedEmailService {
     private static final Logger log = LoggerFactory.getLogger(AutomatedEmailService.class);
 
     private final JavaMailSender mailSender;
+    private final GoogleAppsScriptEmailClient googleAppsScriptEmailClient;
     private final ResendEmailClient resendEmailClient;
     private final boolean enabled;
     private final String fromAddress;
 
     public AutomatedEmailService(
         ObjectProvider<JavaMailSender> mailSenderProvider,
+        ObjectProvider<GoogleAppsScriptEmailClient> googleAppsScriptEmailClientProvider,
         ObjectProvider<ResendEmailClient> resendEmailClientProvider,
         @Value("${app.email.enabled:false}") boolean enabled,
         @Value("${app.email.from:noreply@fichestu.local}") String fromAddress
     ) {
         this.mailSender = mailSenderProvider.getIfAvailable();
+        this.googleAppsScriptEmailClient = googleAppsScriptEmailClientProvider.getIfAvailable();
         this.resendEmailClient = resendEmailClientProvider.getIfAvailable();
         this.enabled = enabled;
         this.fromAddress = fromAddress;
@@ -112,13 +115,22 @@ public class AutomatedEmailService {
             return;
         }
 
+        if (googleAppsScriptEmailClient != null && googleAppsScriptEmailClient.isConfigured()) {
+            try {
+                googleAppsScriptEmailClient.sendTextEmail(to, subject, body, idempotencyKey(eventType, to, subject));
+                return;
+            } catch (EmailDeliveryException ex) {
+                log.warn("Automated email {} could not be sent to {} through Google Apps Script: {}", eventType, to, ex.getMessage());
+            }
+        }
+
         if (resendEmailClient != null && resendEmailClient.isConfigured()) {
             try {
                 resendEmailClient.sendTextEmail(to, subject, body, idempotencyKey(eventType, to, subject));
+                return;
             } catch (EmailDeliveryException ex) {
                 log.warn("Automated email {} could not be sent to {} through Resend: {}", eventType, to, ex.getMessage());
             }
-            return;
         }
 
         if (mailSender == null) {

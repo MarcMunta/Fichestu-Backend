@@ -23,6 +23,7 @@ class AutomatedEmailServiceTests {
         AutomatedEmailService service = new AutomatedEmailService(
             providerFor(mailSender),
             providerFor(null),
+            providerFor(null),
             true,
             "noreply@test.local"
         );
@@ -37,6 +38,7 @@ class AutomatedEmailServiceTests {
         CapturingMailSender mailSender = new CapturingMailSender();
         AutomatedEmailService service = new AutomatedEmailService(
             providerFor(mailSender),
+            providerFor(null),
             providerFor(null),
             true,
             "noreply@test.local"
@@ -56,6 +58,7 @@ class AutomatedEmailServiceTests {
         JavaMailSender mailSender = mock(JavaMailSender.class);
         AutomatedEmailService service = new AutomatedEmailService(
             providerFor(mailSender),
+            providerFor(null),
             providerFor(null),
             false,
             "noreply@test.local"
