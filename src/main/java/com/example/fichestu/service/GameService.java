@@ -54,6 +54,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -79,6 +80,7 @@ public class GameService {
     private static final String STATUS_MATCHMAKING = "MATCHMAKING";
     private static final String STATUS_PICKING = "PICKING";
     private static final String STATUS_CLOSED = "CLOSED";
+    private static final int MAX_SCHEDULED_ADVANCES_PER_TICK = 25;
 
     private final CurrentUserService currentUserService;
     private final PlayerProfileReadService playerProfileReadService;
@@ -491,6 +493,36 @@ public class GameService {
             publishMatchChanged(session.getMatchId(), "BATTLE_ROUND_RESOLVED");
         }
         return buildMatchStateResponse(session, user.getUserId(), "Estado del match cargado", null);
+    }
+
+    @Scheduled(fixedDelay = 1000)
+    @Transactional
+    public void advanceTimedOutMatches() {
+        List<Integer> matchIds = gameSessionRepository.findTimedOutActiveMatchIds(Instant.now()).stream()
+            .limit(MAX_SCHEDULED_ADVANCES_PER_TICK)
+            .toList();
+
+        for (Integer matchId : matchIds) {
+            gameSessionRepository.findByMatchIdForUpdate(matchId).ifPresent(this::advanceTimedOutMatch);
+        }
+    }
+
+    private void advanceTimedOutMatch(GameSessionEntity session) {
+        if (STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
+            resolveMatchmakingIfReady(session);
+            return;
+        }
+        if (STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
+            if (resolveBallSelectionIfReady(session)) {
+                publishMatchChanged(session.getMatchId(), "BALL_SELECTION_READY");
+            }
+            return;
+        }
+        if ("IN_PROGRESS".equalsIgnoreCase(session.getStatus())) {
+            if (resolveBattleRoundIfReady(session, null)) {
+                publishMatchChanged(session.getMatchId(), "BATTLE_ROUND_RESOLVED");
+            }
+        }
     }
 
     @Transactional
