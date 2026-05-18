@@ -145,6 +145,7 @@ public class GameService {
         marketMaintenanceService.syncMarketState();
 
         List<TokenDto> tokens = buildTokenDtos(user);
+        BigDecimal portfolioValue = calculatePortfolioValue(tokens);
         List<com.example.fichestu.api.GameDtos.BadgeDto> badges = playerProfileReadService.loadBadgesForUser(user.getUserId());
         ProfileStatsDto stats = playerProfileReadService.loadStatsForUser(user.getUserId());
 
@@ -154,6 +155,8 @@ public class GameService {
             user.getUserId(),
             user.getUsername(),
             user.getFiatBalance(),
+            portfolioValue,
+            calculateTotalBalance(user.getFiatBalance(), portfolioValue),
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             tokens,
             badges,
@@ -167,11 +170,13 @@ public class GameService {
         marketMaintenanceService.syncMarketState();
 
         List<TokenDto> tokens = buildTokenDtos(user);
+        BigDecimal portfolioValue = calculatePortfolioValue(tokens);
         return new MarketSnapshotResponse(
             "Mercado cargado",
             true,
             user.getFiatBalance(),
-            calculateTotalBalance(user.getFiatBalance(), tokens),
+            portfolioValue,
+            calculateTotalBalance(user.getFiatBalance(), portfolioValue),
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             (int) transactionLogRepository.countByUserUserIdAndType(user.getUserId(), TYPE_REWARDED),
             tokens,
@@ -931,11 +936,13 @@ public class GameService {
         userWalletRepository.save(wallet);
 
         List<TokenDto> tokens = buildTokenDtos(user);
+        BigDecimal portfolioValue = calculatePortfolioValue(tokens);
         return new WalletResponse(
             isBuy ? "Compra realizada" : "Venta realizada",
             true,
             user.getFiatBalance(),
-            calculateTotalBalance(user.getFiatBalance(), tokens),
+            portfolioValue,
+            calculateTotalBalance(user.getFiatBalance(), portfolioValue),
             tokens
         );
     }
@@ -1153,8 +1160,20 @@ public class GameService {
             walletByToken.put(wallet.getToken().getTokenId(), wallet.getQuantity());
         }
 
+        List<TokenEntity> marketTokens = tokenRepository.findAllByOrderByTokenIdAsc();
+        Map<Integer, BigDecimal> holdingValueByToken = new HashMap<>();
+        BigDecimal portfolioValue = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        for (TokenEntity token : marketTokens) {
+            BigDecimal holdings = walletByToken.getOrDefault(token.getTokenId(), BigDecimal.ZERO);
+            BigDecimal holdingValue = token.getCurrentPrice()
+                .multiply(holdings)
+                .setScale(2, RoundingMode.HALF_UP);
+            holdingValueByToken.put(token.getTokenId(), holdingValue);
+            portfolioValue = portfolioValue.add(holdingValue).setScale(2, RoundingMode.HALF_UP);
+        }
+
         List<TokenDto> tokens = new ArrayList<>();
-        for (TokenEntity token : tokenRepository.findAllByOrderByTokenIdAsc()) {
+        for (TokenEntity token : marketTokens) {
             List<TokenPriceHistoryEntity> descendingHistory = tokenPriceHistoryRepository.findTop28ByTokenTokenIdOrderByRecordedAtDesc(token.getTokenId());
             List<BigDecimal> history = descendingHistory.stream()
                 .sorted(Comparator.comparing(TokenPriceHistoryEntity::getRecordedAt))
@@ -1163,6 +1182,17 @@ public class GameService {
 
             BigDecimal previous = history.size() >= 2 ? history.get(history.size() - 2) : token.getCurrentPrice();
             TokenMeta meta = tokenMeta(token.getName(), token.getColorCode());
+            BigDecimal holdings = walletByToken.getOrDefault(token.getTokenId(), BigDecimal.ZERO);
+            BigDecimal holdingValue = holdingValueByToken.getOrDefault(token.getTokenId(), BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+            BigDecimal holdingChangeValue = token.getCurrentPrice()
+                .subtract(previous)
+                .multiply(holdings)
+                .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal portfolioWeightPercent = portfolioValue.compareTo(BigDecimal.ZERO) == 0
+                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                : holdingValue
+                    .multiply(new BigDecimal("100"))
+                    .divide(portfolioValue, 2, RoundingMode.HALF_UP);
 
             tokens.add(new TokenDto(
                 token.getTokenId(),
@@ -1171,7 +1201,10 @@ public class GameService {
                 meta.colorCode(),
                 token.getCurrentPrice(),
                 previous,
-                walletByToken.getOrDefault(token.getTokenId(), BigDecimal.ZERO),
+                holdings,
+                holdingValue,
+                holdingChangeValue,
+                portfolioWeightPercent,
                 history
             ));
         }
@@ -1179,11 +1212,14 @@ public class GameService {
         return tokens;
     }
 
-    private BigDecimal calculateTotalBalance(BigDecimal cashBalance, List<TokenDto> tokens) {
-        BigDecimal holdingsValue = tokens.stream()
-            .map(tokenDto -> tokenDto.currentPrice().multiply(tokenDto.holdings()).setScale(2, RoundingMode.HALF_UP))
+    private BigDecimal calculatePortfolioValue(List<TokenDto> tokens) {
+        return tokens.stream()
+            .map(TokenDto::holdingValue)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return cashBalance.add(holdingsValue).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateTotalBalance(BigDecimal cashBalance, BigDecimal portfolioValue) {
+        return cashBalance.add(portfolioValue).setScale(2, RoundingMode.HALF_UP);
     }
 
     private List<TransactionDto> buildTransactionDtos(Integer userId) {
