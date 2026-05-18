@@ -124,30 +124,29 @@ public class AutomatedEmailService {
             }
         }
 
-        if (resendEmailClient != null && resendEmailClient.isConfigured()) {
+        if (mailSender == null) {
+            log.debug("SMTP mail sender is not configured for {} to {}", eventType, to);
+        } else {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromAddress);
+            message.setTo(to);
+            message.setSubject(subject);
+            message.setText(body);
+
             try {
-                resendEmailClient.sendTextEmail(to, subject, body, idempotencyKey(eventType, to, subject));
+                mailSender.send(message);
                 return;
-            } catch (EmailDeliveryException ex) {
-                log.warn("Automated email {} could not be sent to {} through Resend: {}", eventType, to, ex.getMessage());
+            } catch (MailException ex) {
+                log.warn("Automated email {} could not be sent to {} through SMTP: {}", eventType, to, ex.getMessage());
             }
         }
 
-        if (mailSender == null) {
-            log.debug("Automated email skipped for {} to {} because no email sender is configured", eventType, to);
-            return;
-        }
-
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromAddress);
-        message.setTo(to);
-        message.setSubject(subject);
-        message.setText(body);
-
-        try {
-            mailSender.send(message);
-        } catch (MailException ex) {
-            log.warn("Automated email {} could not be sent to {}: {}", eventType, to, ex.getMessage());
+        if (resendEmailClient != null && resendEmailClient.isConfigured()) {
+            try {
+                resendEmailClient.sendTextEmail(to, subject, body, idempotencyKey(eventType, to, subject));
+            } catch (EmailDeliveryException ex) {
+                log.warn("Automated email {} could not be sent to {} through Resend: {}", eventType, to, ex.getMessage());
+            }
         }
     }
 

@@ -60,6 +60,23 @@ public class PasswordResetMailService {
             }
         }
 
+        if (mailSender == null) {
+            log.warn("SMTP mail sender is not configured for password reset email to {}", email);
+        } else {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromAddress);
+            message.setTo(email);
+            message.setSubject(subject);
+            message.setText(body);
+
+            try {
+                mailSender.send(message);
+                return;
+            } catch (MailException ex) {
+                log.warn("Password reset email could not be sent to {} through SMTP: {}", email, ex.getMessage());
+            }
+        }
+
         if (resendEmailClient != null && resendEmailClient.isConfigured()) {
             try {
                 resendEmailClient.sendTextEmail(email, subject, body, "password-reset-" + email + "-" + token);
@@ -69,23 +86,7 @@ public class PasswordResetMailService {
             }
         }
 
-        if (mailSender == null) {
-            log.warn("Password reset email could not be sent to {} because no email sender is configured", email);
-            throw recoveryEmailFailure();
-        }
-
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromAddress);
-        message.setTo(email);
-        message.setSubject(subject);
-        message.setText(body);
-
-        try {
-            mailSender.send(message);
-        } catch (MailException ex) {
-            log.warn("Password reset email could not be sent to {}: {}", email, ex.getMessage());
-            throw recoveryEmailFailure();
-        }
+        throw recoveryEmailFailure();
     }
 
     private ResponseStatusException recoveryEmailFailure() {
