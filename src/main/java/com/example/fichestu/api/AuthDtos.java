@@ -50,7 +50,6 @@ public final class AuthDtos {
 
     public static class LoginRequest {
         @NotBlank
-        @Email
         private String email;
 
         @NotBlank

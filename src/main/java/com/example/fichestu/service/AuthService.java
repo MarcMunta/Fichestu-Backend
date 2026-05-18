@@ -106,8 +106,8 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        String normalizedEmail = request.getEmail().trim().toLowerCase();
-        UserEntity user = userRepository.findByEmail(normalizedEmail)
+        String identifier = request.getEmail().trim();
+        UserEntity user = findUserForLogin(identifier)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenciales invalidas"));
 
         if (!passwordMatches(user, request.getPassword())) {
@@ -115,6 +115,14 @@ public class AuthService {
         }
 
         return new AuthResponse(jwtService.generateToken(user), "Login correcto", true);
+    }
+
+    private Optional<UserEntity> findUserForLogin(String identifier) {
+        String normalized = identifier.toLowerCase();
+        if (normalized.contains("@")) {
+            return userRepository.findByEmail(normalized);
+        }
+        return userRepository.findByUsernameIgnoreCase(identifier);
     }
 
     @Transactional
