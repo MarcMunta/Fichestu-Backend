@@ -203,7 +203,6 @@ public class GameService {
     public EnterBallRoomResponse enterBallRoom() {
         lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
-        marketMaintenanceService.syncMarketState();
 
         Optional<GameSessionEntity> currentSession = findCurrentSession(user.getUserId());
         if (currentSession.isPresent()) {
@@ -253,7 +252,6 @@ public class GameService {
     public EnterBallRoomResponse joinMatch(Integer matchId) {
         lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
-        marketMaintenanceService.syncMarketState();
 
         Optional<GameSessionEntity> currentSession = findCurrentSession(user.getUserId());
         if (currentSession.isPresent()) {
@@ -1752,10 +1750,10 @@ public class GameService {
 
     private String randomAction() {
         double value = randomProvider.nextDouble();
-        if (value < 0.55) {
+        if (value < 0.78) {
             return "ATTACK";
         }
-        if (value < 0.80) {
+        if (value < 0.92) {
             return "SHIELD";
         }
         return "REBOUND";
