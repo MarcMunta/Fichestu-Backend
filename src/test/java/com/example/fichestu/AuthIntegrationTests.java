@@ -37,9 +37,15 @@ class AuthIntegrationTests extends IntegrationTestSupport {
         assertThat(passwordEncoder.matches("secret123", user.getPasswordHash())).isTrue();
         assertThat(user.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(userWalletRepository.findByIdUserId(user.getUserId()))
-            .hasSize(1)
+            .hasSize(5)
             .extracting(wallet -> wallet.getQuantity())
-            .containsExactly(new BigDecimal("200.0000"));
+            .containsExactlyInAnyOrder(
+                new BigDecimal("10.0000"),
+                new BigDecimal("10.0000"),
+                new BigDecimal("10.0000"),
+                new BigDecimal("10.0000"),
+                new BigDecimal("200.0000")
+            );
     }
 
     @Test

@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class PortfolioWalletService {
 
     public static final BigDecimal INITIAL_PORTFOLIO_VALUE = new BigDecimal("200.00");
+    public static final BigDecimal INITIAL_MARKET_TOKEN_QUANTITY = new BigDecimal("10.0000");
     public static final String GREY_TOKEN_NAME = "Ficha Gris";
     public static final String GREY_TOKEN_COLOR = "#9CA3AF";
     public static final BigDecimal GREY_TOKEN_PRICE = new BigDecimal("1.00");
@@ -39,6 +40,14 @@ public class PortfolioWalletService {
     @Transactional
     public void grantInitialTokenWallets(UserEntity user) {
         creditGreyValue(user, INITIAL_PORTFOLIO_VALUE);
+        for (TokenEntity token : tokenRepository.findAllByOrderByTokenIdAsc()) {
+            if (isGreyToken(token)) {
+                continue;
+            }
+            UserWalletEntity wallet = findOrCreateWallet(user, token);
+            wallet.setQuantity(INITIAL_MARKET_TOKEN_QUANTITY);
+            userWalletRepository.save(wallet);
+        }
     }
 
     @Transactional(readOnly = true)

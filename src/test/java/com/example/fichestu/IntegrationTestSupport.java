@@ -137,6 +137,9 @@ abstract class IntegrationTestSupport {
 
         BigDecimal quantity = value.divide(greyToken.getCurrentPrice(), 4, RoundingMode.HALF_UP);
         seedWalletQuantity(user, greyToken, quantity);
+        tokenRepository.findAllByOrderByTokenIdAsc().stream()
+            .filter(token -> !"Ficha Gris".equalsIgnoreCase(token.getName()))
+            .forEach(token -> seedWalletQuantity(user, token, new BigDecimal("10.0000")));
     }
 
     protected void seedWalletQuantity(UserEntity user, TokenEntity token, BigDecimal quantity) {
@@ -182,7 +185,7 @@ abstract class IntegrationTestSupport {
     }
 
     protected void markPortfolioResetExecuted() {
-        LocalDate markerDate = LocalDate.of(2000, 1, 2);
+        LocalDate markerDate = LocalDate.of(2000, 1, 3);
         if (marketResetAuditRepository.existsByBusinessDate(markerDate)) {
             return;
         }

@@ -54,8 +54,8 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.tokens.length()").value(5))
             .andExpect(jsonPath("$.cashBalance").value(0.00))
-            .andExpect(jsonPath("$.portfolioValue").value(200.00))
-            .andExpect(jsonPath("$.totalBalance").value(200.00));
+            .andExpect(jsonPath("$.portfolioValue").value(2050.00))
+            .andExpect(jsonPath("$.totalBalance").value(2050.00));
     }
 
     @Test
@@ -71,9 +71,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 1))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cashBalance").value(0.00))
-            .andExpect(jsonPath("$.totalBalance").value(200.00));
+            .andExpect(jsonPath("$.totalBalance").value(2050.00));
 
-        assertThat(walletFor(richUser, "Ficha Roja").getQuantity()).isEqualByComparingTo(new BigDecimal("1.0000"));
+        assertThat(walletFor(richUser, "Ficha Roja").getQuantity()).isEqualByComparingTo(new BigDecimal("11.0000"));
         assertThat(walletFor(richUser, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("150.0000"));
         assertThat(transactionLogRepository.findTop20ByUserUserIdOrderByCreatedAtDesc(richUser.getUserId()))
             .anyMatch(log -> "EXCHANGE_BUY".equals(log.getType()));
@@ -98,10 +98,10 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 2))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cashBalance").value(0.00))
-            .andExpect(jsonPath("$.portfolioValue").value(200.00))
-            .andExpect(jsonPath("$.totalBalance").value(200.00))
-            .andExpect(jsonPath("$.tokens[0].holdingValue").value(100.00))
-            .andExpect(jsonPath("$.tokens[0].portfolioWeightPercent").value(50.00));
+            .andExpect(jsonPath("$.portfolioValue").value(2050.00))
+            .andExpect(jsonPath("$.totalBalance").value(2050.00))
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(600.00))
+            .andExpect(jsonPath("$.tokens[0].portfolioWeightPercent").value(29.27));
 
         var red = findTokenByName("Ficha Roja");
         red.setCurrentPrice(new BigDecimal("25.00"));
@@ -117,10 +117,10 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cashBalance").value(0.00))
-            .andExpect(jsonPath("$.portfolioValue").value(150.00))
-            .andExpect(jsonPath("$.totalBalance").value(150.00))
-            .andExpect(jsonPath("$.tokens[0].holdingValue").value(50.00))
-            .andExpect(jsonPath("$.tokens[0].holdingChangeValue").value(-50.00));
+            .andExpect(jsonPath("$.portfolioValue").value(1750.00))
+            .andExpect(jsonPath("$.totalBalance").value(1750.00))
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(300.00))
+            .andExpect(jsonPath("$.tokens[0].holdingChangeValue").value(-300.00));
     }
 
     @Test
@@ -147,7 +147,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(post("/api/game/market/sell")
                 .header("Authorization", bearerFor(user))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("token", "FAZ", "quantity", 1))))
+                .content(objectMapper.writeValueAsString(Map.of("token", "FAZ", "quantity", 11))))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.message").value("No tienes suficientes fichas para vender"));
     }

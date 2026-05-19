@@ -29,7 +29,7 @@ public class MarketMaintenanceService {
     private static final BigDecimal BASE_MIN = new BigDecimal("1.00");
     private static final BigDecimal BASE_MAX = new BigDecimal("500.00");
     private static final BigDecimal RESET_PORTFOLIO_VALUE = new BigDecimal("200.00");
-    private static final LocalDate CASHLESS_PORTFOLIO_RESET_MARKER = LocalDate.of(2000, 1, 2);
+    private static final LocalDate CASHLESS_PORTFOLIO_RESET_MARKER = LocalDate.of(2000, 1, 3);
 
     private final TokenRepository tokenRepository;
     private final TokenPriceHistoryRepository tokenPriceHistoryRepository;
@@ -147,12 +147,24 @@ public class MarketMaintenanceService {
             wallet.setToken(greyToken);
             wallet.setQuantity(greyQuantity);
             userWalletRepository.save(wallet);
+
+            for (TokenEntity token : tokens) {
+                if (isGreyToken(token)) {
+                    continue;
+                }
+                UserWalletEntity tokenWallet = new UserWalletEntity();
+                tokenWallet.setId(new UserWalletId(user.getUserId(), token.getTokenId()));
+                tokenWallet.setUser(user);
+                tokenWallet.setToken(token);
+                tokenWallet.setQuantity(PortfolioWalletService.INITIAL_MARKET_TOKEN_QUANTITY);
+                userWalletRepository.save(tokenWallet);
+            }
         }
 
         MarketResetAuditEntity audit = new MarketResetAuditEntity();
         audit.setBusinessDate(CASHLESS_PORTFOLIO_RESET_MARKER);
         audit.setZoneId(resetZone);
-        audit.setSummary("Reset inicial cashless: todos los usuarios pasan a 200 FTC en ficha gris.");
+        audit.setSummary("Reset inicial cashless: todos los usuarios pasan a 10 fichas de cada mercado y 200 fichas grises.");
         marketResetAuditRepository.save(audit);
 
         return true;
