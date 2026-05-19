@@ -35,7 +35,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AuthService {
 
-    private static final BigDecimal INITIAL_FIAT_BALANCE = new BigDecimal("100.00");
     private static final int RESET_TOKEN_BOUND = 1_000_000;
 
     private final UserRepository userRepository;
@@ -46,6 +45,7 @@ public class AuthService {
     private final CurrentUserService currentUserService;
     private final PasswordResetMailService passwordResetMailService;
     private final AutomatedEmailService automatedEmailService;
+    private final PortfolioWalletService portfolioWalletService;
     private final SecureRandom secureRandom = new SecureRandom();
     private final String googleClientIdWeb = "376595931736-ts5451g69bk8rd6re82o6ln1p28m4i2l.apps.googleusercontent.com";
     private final String googleClientIdAndroid = "376595931736-6oski1i5s8h2dlepv04hhf3upq49jp51.apps.googleusercontent.com";
@@ -62,7 +62,8 @@ public class AuthService {
         JwtTokenRevocationService jwtTokenRevocationService,
         CurrentUserService currentUserService,
         PasswordResetMailService passwordResetMailService,
-        AutomatedEmailService automatedEmailService
+        AutomatedEmailService automatedEmailService,
+        PortfolioWalletService portfolioWalletService
     ) {
         this.userRepository = userRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -72,6 +73,7 @@ public class AuthService {
         this.currentUserService = currentUserService;
         this.passwordResetMailService = passwordResetMailService;
         this.automatedEmailService = automatedEmailService;
+        this.portfolioWalletService = portfolioWalletService;
     }
 
     @Transactional
@@ -95,10 +97,11 @@ public class AuthService {
         user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setProfilePicUrl(null);
-        user.setFiatBalance(INITIAL_FIAT_BALANCE);
+        user.setFiatBalance(BigDecimal.ZERO);
         user.setRole("USER");
 
         user = userRepository.save(user);
+        portfolioWalletService.grantInitialTokenWallets(user);
         automatedEmailService.sendRegistrationEmail(user);
 
         return new AuthResponse(jwtService.generateToken(user), "Registro completado", true);
@@ -152,12 +155,13 @@ public class AuthService {
                 newUser.setUsername(resolveAvailableUsername(name != null ? name : email.split("@")[0]));
                 newUser.setPasswordHash(null);
                 newUser.setProfilePicUrl(picture);
-                newUser.setFiatBalance(INITIAL_FIAT_BALANCE);
+                newUser.setFiatBalance(BigDecimal.ZERO);
                 newUser.setRole("USER");
                 created.set(true);
                 return userRepository.save(newUser);
             });
             if (created.get()) {
+                portfolioWalletService.grantInitialTokenWallets(user);
                 automatedEmailService.sendRegistrationEmail(user);
             }
 

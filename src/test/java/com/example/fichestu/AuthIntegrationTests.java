@@ -18,6 +18,8 @@ class AuthIntegrationTests extends IntegrationTestSupport {
 
     @Test
     void registerPersistsPasswordAsHash() throws Exception {
+        createDefaultTokens();
+
         mockMvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of(
@@ -33,7 +35,10 @@ class AuthIntegrationTests extends IntegrationTestSupport {
         var user = userRepository.findByEmail("nuevo@test.com").orElseThrow();
         assertThat(user.getPasswordHash()).isNotEqualTo("secret123");
         assertThat(passwordEncoder.matches("secret123", user.getPasswordHash())).isTrue();
-        assertThat(user.getFiatBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+        assertThat(user.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(userWalletRepository.findByIdUserId(user.getUserId()))
+            .hasSize(4)
+            .allMatch(wallet -> wallet.getQuantity().compareTo(new BigDecimal("10.0000")) == 0);
     }
 
     @Test

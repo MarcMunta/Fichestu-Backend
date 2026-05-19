@@ -48,10 +48,10 @@ public class AutomatedEmailService {
                 Hola %s,
 
                 Tu cuenta de Fichestu se ha creado correctamente.
-                Saldo inicial: %s FTC.
+                Cartera inicial: 10 fichas de cada tipo.
 
                 Ya puedes iniciar sesion y empezar a jugar.
-                """.formatted(user.getUsername(), formatMoney(user.getFiatBalance())),
+                """.formatted(user.getUsername()),
             "REGISTRATION"
         );
     }
@@ -68,13 +68,12 @@ public class AutomatedEmailService {
                 Tipo: %s
                 Importe: %s FTC
                 Detalle: %s
-                Saldo actual: %s FTC
+                El valor total depende del precio actual de tus fichas.
                 """.formatted(
                     user.getUsername(),
                     type,
                     formatMoney(amount),
-                    description,
-                    formatMoney(user.getFiatBalance())
+                    description
                 ),
             "TRANSACTION_" + type
         );

@@ -53,7 +53,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.tokens.length()").value(4))
-            .andExpect(jsonPath("$.cashBalance").value(200.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00))
+            .andExpect(jsonPath("$.portfolioValue").value(200.00))
+            .andExpect(jsonPath("$.totalBalance").value(200.00));
     }
 
     @Test
@@ -65,15 +67,16 @@ class GameIntegrationTests extends IntegrationTestSupport {
 
         mockMvc.perform(post("/api/game/market/buy")
                 .header("Authorization", bearerFor(richUser))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 1))))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 1))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(150.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00))
+            .andExpect(jsonPath("$.totalBalance").value(200.00));
 
         UserWalletEntity wallet = userWalletRepository.findByIdUserId(richUser.getUserId()).get(0);
-        assertThat(wallet.getQuantity()).isEqualByComparingTo(new BigDecimal("1.0000"));
+        assertThat(wallet.getQuantity()).isEqualByComparingTo(new BigDecimal("2.0000"));
         assertThat(transactionLogRepository.findTop20ByUserUserIdOrderByCreatedAtDesc(richUser.getUserId()))
-            .anyMatch(log -> "BUY".equals(log.getType()));
+            .anyMatch(log -> "EXCHANGE_BUY".equals(log.getType()));
 
         mockMvc.perform(post("/api/game/market/buy")
                 .header("Authorization", bearerFor(poorUser))
@@ -91,14 +94,14 @@ class GameIntegrationTests extends IntegrationTestSupport {
 
         mockMvc.perform(post("/api/game/market/buy")
                 .header("Authorization", bearerFor(user))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 2))))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("token", "FRO", "quantity", 2))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00))
-            .andExpect(jsonPath("$.portfolioValue").value(100.00))
+            .andExpect(jsonPath("$.cashBalance").value(0.00))
+            .andExpect(jsonPath("$.portfolioValue").value(200.00))
             .andExpect(jsonPath("$.totalBalance").value(200.00))
-            .andExpect(jsonPath("$.tokens[0].holdingValue").value(100.00))
-            .andExpect(jsonPath("$.tokens[0].portfolioWeightPercent").value(100.00));
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(150.00))
+            .andExpect(jsonPath("$.tokens[0].portfolioWeightPercent").value(75.00));
 
         var red = findTokenByName("Ficha Roja");
         red.setCurrentPrice(new BigDecimal("25.00"));
@@ -111,13 +114,13 @@ class GameIntegrationTests extends IntegrationTestSupport {
         tokenPriceHistoryRepository.save(history);
 
         mockMvc.perform(get("/api/game/market")
-                .header("Authorization", bearerFor(user)))
+            .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00))
-            .andExpect(jsonPath("$.portfolioValue").value(50.00))
-            .andExpect(jsonPath("$.totalBalance").value(150.00))
-            .andExpect(jsonPath("$.tokens[0].holdingValue").value(50.00))
-            .andExpect(jsonPath("$.tokens[0].holdingChangeValue").value(-50.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00))
+            .andExpect(jsonPath("$.portfolioValue").value(125.00))
+            .andExpect(jsonPath("$.totalBalance").value(125.00))
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(75.00))
+            .andExpect(jsonPath("$.tokens[0].holdingChangeValue").value(-75.00));
     }
 
     @Test
@@ -133,11 +136,11 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/game/market/sell")
-                .header("Authorization", bearerFor(user))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("token", "FAZ", "quantity", 1))))
+            .header("Authorization", bearerFor(user))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("token", "FAZ", "quantity", 2))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00));
 
         mockMvc.perform(post("/api/game/market/sell")
                 .header("Authorization", bearerFor(user))
@@ -171,9 +174,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
         assertThat(secondRun).isFalse();
 
         var refreshedUser = userRepository.findById(user.getUserId()).orElseThrow();
-        assertThat(refreshedUser.getFiatBalance()).isGreaterThan(balanceBeforeReset);
+        assertThat(refreshedUser.getFiatBalance()).isEqualByComparingTo(balanceBeforeReset);
         assertThat(userWalletRepository.findByIdUserId(user.getUserId()).get(0).getQuantity())
-            .isEqualByComparingTo(new BigDecimal("0.0000"));
+            .isGreaterThan(BigDecimal.ZERO);
     }
 
     @Test
@@ -236,21 +239,21 @@ class GameIntegrationTests extends IntegrationTestSupport {
         UserEntity user = createUser("leaver", "leaver@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
         String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
-                .header("Authorization", bearerFor(user)))
+            .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(90.00))
+            .andExpect(jsonPath("$.cashBalance").value(0.00))
             .andReturn()
             .getResponse()
             .getContentAsString();
         int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
 
         mockMvc.perform(post("/api/game/matches/{matchId}/abandon", matchId)
-                .header("Authorization", bearerFor(user)))
+            .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00));
 
         UserEntity refreshed = userRepository.findById(user.getUserId()).orElseThrow();
-        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -259,17 +262,17 @@ class GameIntegrationTests extends IntegrationTestSupport {
         UserEntity user = createUser("reenter", "reenter@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
         mockMvc.perform(post("/api/game/ball-room/enter")
-                .header("Authorization", bearerFor(user)))
+            .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(90.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00));
 
         mockMvc.perform(post("/api/game/ball-room/enter")
-                .header("Authorization", bearerFor(user)))
+            .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(90.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00));
 
         UserEntity refreshed = userRepository.findById(user.getUserId()).orElseThrow();
-        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(new BigDecimal("90.00"));
+        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -278,9 +281,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
         UserEntity user = createUser("latecancel", "latecancel@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
         String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
-                .header("Authorization", bearerFor(user)))
+            .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(90.00))
+            .andExpect(jsonPath("$.cashBalance").value(0.00))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -296,12 +299,12 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.ballRoom.phase").value("PICKING"));
 
         mockMvc.perform(post("/api/game/matches/{matchId}/matchmaking/cancel", matchId)
-                .header("Authorization", bearerFor(user)))
+            .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00));
 
         UserEntity refreshed = userRepository.findById(user.getUserId()).orElseThrow();
-        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(transactionLogRepository.existsByUserUserIdAndTypeAndDescription(
             user.getUserId(),
             "BALL_ENTRY_REFUND",
@@ -386,12 +389,12 @@ class GameIntegrationTests extends IntegrationTestSupport {
         }
 
         mockMvc.perform(post("/api/game/matches/{matchId}/abandon", matchId)
-                .header("Authorization", bearerFor(users.get(0))))
+            .header("Authorization", bearerFor(users.get(0))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00));
+            .andExpect(jsonPath("$.cashBalance").value(0.00));
 
         UserEntity refreshed = userRepository.findById(users.get(0).getUserId()).orElseThrow();
-        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(matchParticipantRepository.existsByIdMatchIdAndIdUserId(matchId, users.get(0).getUserId())).isFalse();
         assertThat(matchParticipantRepository.countByIdMatchId(matchId)).isEqualTo(10);
     }

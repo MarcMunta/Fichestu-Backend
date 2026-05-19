@@ -25,7 +25,6 @@ import com.example.fichestu.persistence.entity.TokenPriceHistoryEntity;
 import com.example.fichestu.persistence.entity.TransactionLogEntity;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.entity.UserWalletEntity;
-import com.example.fichestu.persistence.entity.UserWalletId;
 import com.example.fichestu.persistence.repository.GameSessionEventRepository;
 import com.example.fichestu.persistence.repository.GameSessionRepository;
 import com.example.fichestu.persistence.repository.MatchCardRepository;
@@ -64,6 +63,7 @@ public class GameService {
 
     private static final BigDecimal BALL_ENTRY_COST = new BigDecimal("10.00");
     private static final BigDecimal REWARDED_AMOUNT = new BigDecimal("25.00");
+    private static final BigDecimal CASHLESS_BALANCE = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final BigDecimal MIN_TOKEN_PRICE = new BigDecimal("0.50");
     private static final BigDecimal MAX_TOKEN_PRICE = new BigDecimal("5000.00");
     private static final BigDecimal MAX_MARKET_IMPACT_MULTIPLIER = new BigDecimal("3.00");
@@ -98,6 +98,7 @@ public class GameService {
     private final NotificationService notificationService;
     private final AutomatedEmailService automatedEmailService;
     private final MatchRealtimeService matchRealtimeService;
+    private final PortfolioWalletService portfolioWalletService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -121,7 +122,8 @@ public class GameService {
         RandomProvider randomProvider,
         NotificationService notificationService,
         AutomatedEmailService automatedEmailService,
-        MatchRealtimeService matchRealtimeService
+        MatchRealtimeService matchRealtimeService,
+        PortfolioWalletService portfolioWalletService
     ) {
         this.currentUserService = currentUserService;
         this.playerProfileReadService = playerProfileReadService;
@@ -139,6 +141,7 @@ public class GameService {
         this.notificationService = notificationService;
         this.automatedEmailService = automatedEmailService;
         this.matchRealtimeService = matchRealtimeService;
+        this.portfolioWalletService = portfolioWalletService;
     }
 
     @Transactional
@@ -156,9 +159,9 @@ public class GameService {
             true,
             user.getUserId(),
             user.getUsername(),
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             portfolioValue,
-            calculateTotalBalance(user.getFiatBalance(), portfolioValue),
+            calculateTotalBalance(portfolioValue),
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             tokens,
             badges,
@@ -176,9 +179,9 @@ public class GameService {
         return new MarketSnapshotResponse(
             "Mercado cargado",
             true,
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             portfolioValue,
-            calculateTotalBalance(user.getFiatBalance(), portfolioValue),
+            calculateTotalBalance(portfolioValue),
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             (int) transactionLogRepository.countByUserUserIdAndType(user.getUserId(), TYPE_REWARDED),
             tokens,
@@ -210,7 +213,7 @@ public class GameService {
                 "Ya estas en una sala activa",
                 true,
                 session.getMatchId(),
-                user.getFiatBalance(),
+                CASHLESS_BALANCE,
                 buildBallRoomDto(session, user.getUserId())
             );
         }
@@ -241,7 +244,7 @@ public class GameService {
             "Entrada pagada. Buscando jugadores",
             true,
             session.getMatchId(),
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             buildBallRoomDto(session, user.getUserId())
         );
     }
@@ -263,7 +266,7 @@ public class GameService {
                 "Ya perteneces a esta sala",
                 true,
                 existing.getMatchId(),
-                user.getFiatBalance(),
+                CASHLESS_BALANCE,
                 buildBallRoomDto(existing, user.getUserId())
             );
         }
@@ -303,7 +306,7 @@ public class GameService {
             "Te has unido a la sala",
             true,
             session.getMatchId(),
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             buildBallRoomDto(session, user.getUserId())
         );
     }
@@ -339,7 +342,7 @@ public class GameService {
             "Matchmaking cancelado",
             true,
             null,
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             new BallRoomDto("WAITING_ENTRY", "Matchmaking cancelado", false, null, List.of(), List.of())
         );
     }
@@ -355,7 +358,7 @@ public class GameService {
                 "La sala ya ha avanzado",
                 true,
                 session.getMatchId(),
-                user.getFiatBalance(),
+                CASHLESS_BALANCE,
                 buildBallRoomDto(session, user.getUserId())
             );
         }
@@ -372,7 +375,7 @@ public class GameService {
             "Has abandonado el matchmaking",
             true,
             null,
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             new BallRoomDto("WAITING_ENTRY", "Has abandonado la sala. Entrada devuelta.", false, null, List.of(), List.of())
         );
     }
@@ -388,7 +391,7 @@ public class GameService {
                 "La partida ya estaba cerrada",
                 true,
                 null,
-                user.getFiatBalance(),
+                CASHLESS_BALANCE,
                 new BallRoomDto("WAITING_ENTRY", "No hay partida activa.", false, null, List.of(), List.of())
             );
         }
@@ -419,7 +422,7 @@ public class GameService {
                 "Has abandonado la sala",
                 true,
                 null,
-                user.getFiatBalance(),
+                CASHLESS_BALANCE,
                 new BallRoomDto("WAITING_ENTRY", "Has salido antes del battle. Entrada devuelta.", false, null, List.of(), List.of())
             );
         }
@@ -432,7 +435,7 @@ public class GameService {
                 "Has salido de la partida",
                 true,
                 null,
-                user.getFiatBalance(),
+                CASHLESS_BALANCE,
                 new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
             );
         }
@@ -464,7 +467,7 @@ public class GameService {
             "Has salido de la partida",
             true,
             null,
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
         );
     }
@@ -906,20 +909,19 @@ public class GameService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rewarded no disponible todavia");
         }
 
-        user.setFiatBalance(user.getFiatBalance().add(REWARDED_AMOUNT).setScale(2, RoundingMode.HALF_UP));
-        userRepository.save(user);
+        portfolioWalletService.creditValue(user, REWARDED_AMOUNT, Set.of());
         logTransaction(user, TYPE_REWARDED, REWARDED_AMOUNT, "Rewarded ad completado");
         notificationService.create(
             user,
             "Rewarded aplicado",
-            "Has recibido " + REWARDED_AMOUNT + " FTC en tu saldo.",
+            "Has recibido " + REWARDED_AMOUNT + " FTC en fichas.",
             "REWARDED"
         );
 
         return new CooldownResponse(
             "Rewarded aplicado",
             true,
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             (int) transactionLogRepository.countByUserUserIdAndType(user.getUserId(), TYPE_REWARDED)
         );
@@ -934,21 +936,18 @@ public class GameService {
         marketMaintenanceService.syncMarketState();
 
         TokenEntity token = resolveToken(tokenAlias);
-        UserWalletEntity wallet = findOrCreateWallet(user, token);
+        UserWalletEntity wallet = portfolioWalletService.findOrCreateWallet(user, token);
         BigDecimal qty = BigDecimal.valueOf(quantity).setScale(4, RoundingMode.HALF_UP);
         BigDecimal amount = token.getCurrentPrice().multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);
 
         if (isBuy) {
-            if (user.getFiatBalance().compareTo(amount) < 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente para comprar");
-            }
-            user.setFiatBalance(user.getFiatBalance().subtract(amount).setScale(2, RoundingMode.HALF_UP));
+            portfolioWalletService.debitValue(user, amount, Set.of(token.getTokenId()), "comprar");
             wallet.setQuantity(wallet.getQuantity().add(qty));
-            logTransaction(user, "BUY", amount.negate(), "Compra de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
+            logTransaction(user, "EXCHANGE_BUY", amount.negate(), "Cambio a " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
             notificationService.create(
                 user,
-                "Compra realizada",
-                "Has comprado " + quantity + " " + token.getName() + " por " + amount + " FTC.",
+                "Cambio realizado",
+                "Has cambiado fichas por " + quantity + " " + token.getName() + " (" + amount + " FTC).",
                 "MARKET_BUY"
             );
         } else {
@@ -956,27 +955,26 @@ public class GameService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No tienes suficientes fichas para vender");
             }
             wallet.setQuantity(wallet.getQuantity().subtract(qty));
-            user.setFiatBalance(user.getFiatBalance().add(amount).setScale(2, RoundingMode.HALF_UP));
-            logTransaction(user, "SELL", amount, "Venta de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
+            portfolioWalletService.creditValue(user, amount, Set.of(token.getTokenId()));
+            logTransaction(user, "EXCHANGE_SELL", amount, "Cambio desde " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
             notificationService.create(
                 user,
-                "Venta realizada",
-                "Has vendido " + quantity + " " + token.getName() + " por " + amount + " FTC.",
+                "Cambio realizado",
+                "Has cambiado " + quantity + " " + token.getName() + " por otras fichas (" + amount + " FTC).",
                 "MARKET_SELL"
             );
         }
 
-        userRepository.save(user);
         userWalletRepository.save(wallet);
 
         List<TokenDto> tokens = buildTokenDtos(user);
         BigDecimal portfolioValue = calculatePortfolioValue(tokens);
         return new WalletResponse(
-            isBuy ? "Compra realizada" : "Venta realizada",
+            isBuy ? "Cambio realizado" : "Cambio realizado",
             true,
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             portfolioValue,
-            calculateTotalBalance(user.getFiatBalance(), portfolioValue),
+            calculateTotalBalance(portfolioValue),
             tokens
         );
     }
@@ -1252,8 +1250,8 @@ public class GameService {
             .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal calculateTotalBalance(BigDecimal cashBalance, BigDecimal portfolioValue) {
-        return cashBalance.add(portfolioValue).setScale(2, RoundingMode.HALF_UP);
+    private BigDecimal calculateTotalBalance(BigDecimal portfolioValue) {
+        return portfolioValue.setScale(2, RoundingMode.HALF_UP);
     }
 
     private List<TransactionDto> buildTransactionDtos(Integer userId) {
@@ -1352,7 +1350,7 @@ public class GameService {
             "Te has unido a una sala abierta",
             true,
             session.getMatchId(),
-            user.getFiatBalance(),
+            CASHLESS_BALANCE,
             buildBallRoomDto(session, user.getUserId())
         );
     }
@@ -1624,7 +1622,7 @@ public class GameService {
     }
 
     private void ensureSufficientBalance(UserEntity user, String actionDescription) {
-        if (user.getFiatBalance().compareTo(BALL_ENTRY_COST) < 0) {
+        if (portfolioWalletService.calculatePortfolioValue(user).compareTo(BALL_ENTRY_COST) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente para " + actionDescription);
         }
     }
@@ -1634,8 +1632,7 @@ public class GameService {
         if (transactionLogRepository.existsByUserUserIdAndTypeAndDescription(user.getUserId(), "BALL_ENTRY", description)) {
             return;
         }
-        user.setFiatBalance(user.getFiatBalance().subtract(BALL_ENTRY_COST).setScale(2, RoundingMode.HALF_UP));
-        userRepository.save(user);
+        portfolioWalletService.debitValue(user, BALL_ENTRY_COST, Set.of(), "entrar en la sala");
         logTransaction(user, "BALL_ENTRY", BALL_ENTRY_COST.negate(), description);
     }
 
@@ -1644,8 +1641,7 @@ public class GameService {
         if (transactionLogRepository.existsByUserUserIdAndTypeAndDescription(user.getUserId(), "BALL_ENTRY_REFUND", description)) {
             return;
         }
-        user.setFiatBalance(user.getFiatBalance().add(BALL_ENTRY_COST).setScale(2, RoundingMode.HALF_UP));
-        userRepository.save(user);
+        portfolioWalletService.creditValue(user, BALL_ENTRY_COST, Set.of());
         logTransaction(user, "BALL_ENTRY_REFUND", BALL_ENTRY_COST, description);
     }
 
@@ -1707,18 +1703,6 @@ public class GameService {
         };
         return tokenRepository.findByNameIgnoreCase(tokenName)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Token no encontrado"));
-    }
-
-    private UserWalletEntity findOrCreateWallet(UserEntity user, TokenEntity token) {
-        UserWalletId id = new UserWalletId(user.getUserId(), token.getTokenId());
-        return userWalletRepository.findById(id).orElseGet(() -> {
-            UserWalletEntity wallet = new UserWalletEntity();
-            wallet.setId(id);
-            wallet.setUser(user);
-            wallet.setToken(token);
-            wallet.setQuantity(BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP));
-            return wallet;
-        });
     }
 
     private boolean isMultiplierVisible(String sessionStatus) {

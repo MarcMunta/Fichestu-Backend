@@ -3,6 +3,8 @@ package com.example.fichestu;
 import com.example.fichestu.persistence.entity.TokenEntity;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.entity.MarketResetAuditEntity;
+import com.example.fichestu.persistence.entity.UserWalletEntity;
+import com.example.fichestu.persistence.entity.UserWalletId;
 import com.example.fichestu.persistence.repository.BadgeRepository;
 import com.example.fichestu.persistence.repository.GameSessionEventRepository;
 import com.example.fichestu.persistence.repository.GameSessionRepository;
@@ -21,6 +23,7 @@ import com.example.fichestu.persistence.repository.UserWalletRepository;
 import com.example.fichestu.security.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -117,8 +120,35 @@ abstract class IntegrationTestSupport {
         user.setEmail(email);
         user.setPasswordHash(rawPassword == null ? null : passwordEncoder.encode(rawPassword));
         user.setRole(role);
-        user.setFiatBalance(fiatBalance);
-        return userRepository.save(user);
+        user.setFiatBalance(BigDecimal.ZERO);
+        UserEntity saved = userRepository.save(user);
+        seedPortfolioValue(saved, fiatBalance);
+        return saved;
+    }
+
+    protected void seedPortfolioValue(UserEntity user, BigDecimal value) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        var tokens = tokenRepository.findAllByOrderByTokenIdAsc();
+        if (tokens.isEmpty()) {
+            return;
+        }
+
+        BigDecimal perTokenValue = value.divide(BigDecimal.valueOf(tokens.size()), 8, RoundingMode.HALF_UP);
+        for (TokenEntity token : tokens) {
+            BigDecimal quantity = perTokenValue.divide(token.getCurrentPrice(), 4, RoundingMode.HALF_UP);
+            seedWalletQuantity(user, token, quantity);
+        }
+    }
+
+    protected void seedWalletQuantity(UserEntity user, TokenEntity token, BigDecimal quantity) {
+        UserWalletEntity wallet = new UserWalletEntity();
+        wallet.setId(new UserWalletId(user.getUserId(), token.getTokenId()));
+        wallet.setUser(user);
+        wallet.setToken(token);
+        wallet.setQuantity(quantity.setScale(4, RoundingMode.HALF_UP));
+        userWalletRepository.save(wallet);
     }
 
     protected String bearerFor(UserEntity user) {

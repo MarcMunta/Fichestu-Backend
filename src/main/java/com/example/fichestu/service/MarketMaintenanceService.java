@@ -3,15 +3,9 @@ package com.example.fichestu.service;
 import com.example.fichestu.persistence.entity.MarketResetAuditEntity;
 import com.example.fichestu.persistence.entity.TokenEntity;
 import com.example.fichestu.persistence.entity.TokenPriceHistoryEntity;
-import com.example.fichestu.persistence.entity.TransactionLogEntity;
-import com.example.fichestu.persistence.entity.UserEntity;
-import com.example.fichestu.persistence.entity.UserWalletEntity;
 import com.example.fichestu.persistence.repository.MarketResetAuditRepository;
 import com.example.fichestu.persistence.repository.TokenPriceHistoryRepository;
 import com.example.fichestu.persistence.repository.TokenRepository;
-import com.example.fichestu.persistence.repository.TransactionLogRepository;
-import com.example.fichestu.persistence.repository.UserRepository;
-import com.example.fichestu.persistence.repository.UserWalletRepository;
 import com.example.fichestu.support.RandomProvider;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -30,16 +24,11 @@ public class MarketMaintenanceService {
     private static final BigDecimal MIN_PRICE = new BigDecimal("0.50");
     private static final BigDecimal BASE_MIN = new BigDecimal("5.00");
     private static final BigDecimal BASE_MAX = new BigDecimal("500.00");
-    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
 
     private final TokenRepository tokenRepository;
     private final TokenPriceHistoryRepository tokenPriceHistoryRepository;
-    private final UserWalletRepository userWalletRepository;
-    private final UserRepository userRepository;
-    private final TransactionLogRepository transactionLogRepository;
     private final MarketResetAuditRepository marketResetAuditRepository;
     private final RandomProvider randomProvider;
-    private final AutomatedEmailService automatedEmailService;
 
     @Value("${app.market.reset-zone:Europe/Madrid}")
     private String resetZone;
@@ -50,21 +39,13 @@ public class MarketMaintenanceService {
     public MarketMaintenanceService(
         TokenRepository tokenRepository,
         TokenPriceHistoryRepository tokenPriceHistoryRepository,
-        UserWalletRepository userWalletRepository,
-        UserRepository userRepository,
-        TransactionLogRepository transactionLogRepository,
         MarketResetAuditRepository marketResetAuditRepository,
-        RandomProvider randomProvider,
-        AutomatedEmailService automatedEmailService
+        RandomProvider randomProvider
     ) {
         this.tokenRepository = tokenRepository;
         this.tokenPriceHistoryRepository = tokenPriceHistoryRepository;
-        this.userWalletRepository = userWalletRepository;
-        this.userRepository = userRepository;
-        this.transactionLogRepository = transactionLogRepository;
         this.marketResetAuditRepository = marketResetAuditRepository;
         this.randomProvider = randomProvider;
-        this.automatedEmailService = automatedEmailService;
     }
 
     @Scheduled(cron = "${app.market.daily-reset-cron:0 0 0 * * *}", zone = "${app.market.reset-zone:Europe/Madrid}")
@@ -99,33 +80,6 @@ public class MarketMaintenanceService {
         ensurePriceHistorySeeded();
 
         List<TokenEntity> tokens = tokenRepository.findAllByOrderByTokenIdAsc();
-        List<UserWalletEntity> wallets = userWalletRepository.findByQuantityGreaterThan(BigDecimal.ZERO);
-        int liquidatedWallets = 0;
-
-        for (UserWalletEntity wallet : wallets) {
-            if (wallet.getQuantity() == null || wallet.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-                continue;
-            }
-
-            BigDecimal liquidation = wallet.getQuantity()
-                .multiply(wallet.getToken().getCurrentPrice())
-                .setScale(2, RoundingMode.HALF_UP);
-
-            UserEntity user = wallet.getUser();
-            user.setFiatBalance(user.getFiatBalance().add(liquidation).setScale(2, RoundingMode.HALF_UP));
-            wallet.setQuantity(ZERO);
-            userRepository.save(user);
-            userWalletRepository.save(wallet);
-            liquidatedWallets++;
-
-            logTransaction(
-                user,
-                "DAILY_RESET_LIQUIDATION",
-                liquidation,
-                "Liquidacion diaria " + businessDate + " en zona " + resetZone
-            );
-        }
-
         for (TokenEntity token : tokens) {
             BigDecimal newPrice = randomBasePrice();
             token.setCurrentPrice(newPrice);
@@ -137,7 +91,7 @@ public class MarketMaintenanceService {
         MarketResetAuditEntity audit = new MarketResetAuditEntity();
         audit.setBusinessDate(businessDate);
         audit.setZoneId(resetZone);
-        audit.setSummary("Reset diario ejecutado para " + tokens.size() + " tokens y " + liquidatedWallets + " carteras.");
+        audit.setSummary("Reset diario ejecutado para " + tokens.size() + " tokens. Las carteras conservan sus fichas.");
         marketResetAuditRepository.save(audit);
 
         return true;
@@ -200,13 +154,4 @@ public class MarketMaintenanceService {
         tokenPriceHistoryRepository.save(history);
     }
 
-    private void logTransaction(UserEntity user, String type, BigDecimal amount, String description) {
-        TransactionLogEntity log = new TransactionLogEntity();
-        log.setUser(user);
-        log.setType(type);
-        log.setAmountFiat(amount.setScale(2, RoundingMode.HALF_UP));
-        log.setDescription(description);
-        transactionLogRepository.save(log);
-        automatedEmailService.sendTransactionEmail(user, type, log.getAmountFiat(), description);
-    }
 }
