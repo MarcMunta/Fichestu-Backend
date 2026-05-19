@@ -160,6 +160,7 @@ abstract class IntegrationTestSupport {
         createToken("Ficha Azul", "#0000FF", new BigDecimal("25.00"));
         createToken("Ficha Verde", "#00FF00", new BigDecimal("10.00"));
         createToken("Ficha Dorada", "#FFD700", new BigDecimal("100.00"));
+        markPortfolioResetExecuted();
     }
 
     protected TokenEntity findTokenByName(String name) {
@@ -179,6 +180,19 @@ abstract class IntegrationTestSupport {
         audit.setBusinessDate(businessDate);
         audit.setZoneId("Europe/Madrid");
         audit.setSummary("Reset sembrado en test para estabilizar el mercado");
+        marketResetAuditRepository.save(audit);
+    }
+
+    protected void markPortfolioResetExecuted() {
+        LocalDate markerDate = LocalDate.of(2000, 1, 1);
+        if (marketResetAuditRepository.existsByBusinessDate(markerDate)) {
+            return;
+        }
+
+        MarketResetAuditEntity audit = new MarketResetAuditEntity();
+        audit.setBusinessDate(markerDate);
+        audit.setZoneId("Europe/Madrid");
+        audit.setSummary("Reset cashless sembrado en test");
         marketResetAuditRepository.save(audit);
     }
 
