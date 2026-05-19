@@ -130,16 +130,13 @@ abstract class IntegrationTestSupport {
         if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
-        var tokens = tokenRepository.findAllByOrderByTokenIdAsc();
-        if (tokens.isEmpty()) {
+        var greyToken = tokenRepository.findByNameIgnoreCase("Ficha Gris").orElse(null);
+        if (greyToken == null || greyToken.getCurrentPrice() == null || greyToken.getCurrentPrice().compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
 
-        BigDecimal perTokenValue = value.divide(BigDecimal.valueOf(tokens.size()), 8, RoundingMode.HALF_UP);
-        for (TokenEntity token : tokens) {
-            BigDecimal quantity = perTokenValue.divide(token.getCurrentPrice(), 4, RoundingMode.HALF_UP);
-            seedWalletQuantity(user, token, quantity);
-        }
+        BigDecimal quantity = value.divide(greyToken.getCurrentPrice(), 4, RoundingMode.HALF_UP);
+        seedWalletQuantity(user, greyToken, quantity);
     }
 
     protected void seedWalletQuantity(UserEntity user, TokenEntity token, BigDecimal quantity) {
@@ -160,6 +157,7 @@ abstract class IntegrationTestSupport {
         createToken("Ficha Azul", "#0000FF", new BigDecimal("25.00"));
         createToken("Ficha Verde", "#00FF00", new BigDecimal("10.00"));
         createToken("Ficha Dorada", "#FFD700", new BigDecimal("100.00"));
+        createToken("Ficha Gris", "#9CA3AF", new BigDecimal("1.00"));
         markPortfolioResetExecuted();
     }
 
@@ -184,7 +182,7 @@ abstract class IntegrationTestSupport {
     }
 
     protected void markPortfolioResetExecuted() {
-        LocalDate markerDate = LocalDate.of(2000, 1, 1);
+        LocalDate markerDate = LocalDate.of(2000, 1, 2);
         if (marketResetAuditRepository.existsByBusinessDate(markerDate)) {
             return;
         }

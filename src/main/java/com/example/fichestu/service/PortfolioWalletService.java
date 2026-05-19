@@ -8,8 +8,7 @@ import com.example.fichestu.persistence.repository.TokenRepository;
 import com.example.fichestu.persistence.repository.UserWalletRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Comparator;
-import java.util.List;
+import java.time.Instant;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,6 +19,9 @@ import org.springframework.web.server.ResponseStatusException;
 public class PortfolioWalletService {
 
     public static final BigDecimal INITIAL_PORTFOLIO_VALUE = new BigDecimal("200.00");
+    public static final String GREY_TOKEN_NAME = "Ficha Gris";
+    public static final String GREY_TOKEN_COLOR = "#9CA3AF";
+    public static final BigDecimal GREY_TOKEN_PRICE = new BigDecimal("1.00");
 
     private static final int MONEY_SCALE = 2;
     private static final int QUANTITY_SCALE = 4;
@@ -36,7 +38,7 @@ public class PortfolioWalletService {
 
     @Transactional
     public void grantInitialTokenWallets(UserEntity user) {
-        creditValue(user, INITIAL_PORTFOLIO_VALUE, Set.of());
+        creditGreyValue(user, INITIAL_PORTFOLIO_VALUE);
     }
 
     @Transactional(readOnly = true)
@@ -56,71 +58,49 @@ public class PortfolioWalletService {
 
     @Transactional
     public void debitValue(UserEntity user, BigDecimal amount, Set<Integer> excludedTokenIds, String actionDescription) {
+        debitGreyValue(user, amount, actionDescription);
+    }
+
+    @Transactional
+    public void debitGreyValue(UserEntity user, BigDecimal amount, String actionDescription) {
         BigDecimal target = normalizeMoney(amount);
         if (target.compareTo(ZERO_MONEY) <= 0) {
             return;
         }
-        if (calculatePortfolioValue(user, excludedTokenIds).compareTo(target) < 0) {
+
+        TokenEntity greyToken = ensureGreyToken();
+        UserWalletEntity wallet = findOrCreateWallet(user, greyToken);
+        BigDecimal quantity = wallet.getQuantity() == null ? ZERO_QUANTITY : wallet.getQuantity();
+        BigDecimal available = greyToken.getCurrentPrice()
+            .multiply(quantity)
+            .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        if (available.compareTo(target) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente para " + actionDescription);
         }
 
-        BigDecimal remaining = target;
-        List<UserWalletEntity> wallets = userWalletRepository.findByIdUserId(user.getUserId()).stream()
-            .filter(wallet -> wallet.getToken() != null)
-            .filter(wallet -> !excludedTokenIds.contains(wallet.getToken().getTokenId()))
-            .filter(wallet -> wallet.getQuantity() != null && wallet.getQuantity().compareTo(ZERO_QUANTITY) > 0)
-            .filter(wallet -> wallet.getToken().getCurrentPrice() != null && wallet.getToken().getCurrentPrice().compareTo(BigDecimal.ZERO) > 0)
-            .sorted(Comparator.comparing(wallet -> wallet.getToken().getTokenId()))
-            .toList();
-
-        for (UserWalletEntity wallet : wallets) {
-            if (remaining.compareTo(ZERO_MONEY) <= 0) {
-                break;
-            }
-
-            BigDecimal price = wallet.getToken().getCurrentPrice();
-            BigDecimal walletValue = holdingValue(wallet);
-            BigDecimal valueToDebit = remaining.min(walletValue);
-            BigDecimal quantityToDebit = valueToDebit.divide(price, QUANTITY_SCALE, RoundingMode.UP);
-            if (quantityToDebit.compareTo(wallet.getQuantity()) > 0) {
-                quantityToDebit = wallet.getQuantity();
-            }
-
-            wallet.setQuantity(wallet.getQuantity().subtract(quantityToDebit).max(ZERO_QUANTITY).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
-            userWalletRepository.save(wallet);
-
-            BigDecimal actualDebited = price.multiply(quantityToDebit).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            remaining = remaining.subtract(actualDebited).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        }
+        BigDecimal quantityToDebit = target.divide(greyToken.getCurrentPrice(), QUANTITY_SCALE, RoundingMode.UP);
+        wallet.setQuantity(quantity.subtract(quantityToDebit).max(ZERO_QUANTITY).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
+        userWalletRepository.save(wallet);
     }
 
     @Transactional
     public void creditValue(UserEntity user, BigDecimal amount, Set<Integer> excludedTokenIds) {
+        creditGreyValue(user, amount);
+    }
+
+    @Transactional
+    public void creditGreyValue(UserEntity user, BigDecimal amount) {
         BigDecimal target = normalizeMoney(amount);
         if (target.compareTo(ZERO_MONEY) <= 0) {
             return;
         }
 
-        List<TokenEntity> tokens = tokenRepository.findAllByOrderByTokenIdAsc().stream()
-            .filter(token -> !excludedTokenIds.contains(token.getTokenId()))
-            .filter(token -> token.getCurrentPrice() != null && token.getCurrentPrice().compareTo(BigDecimal.ZERO) > 0)
-            .toList();
-        if (tokens.isEmpty()) {
-            tokens = tokenRepository.findAllByOrderByTokenIdAsc().stream()
-                .filter(token -> token.getCurrentPrice() != null && token.getCurrentPrice().compareTo(BigDecimal.ZERO) > 0)
-                .toList();
-        }
-        if (tokens.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No hay fichas disponibles para abonar FTC");
-        }
-
-        BigDecimal perTokenValue = target.divide(BigDecimal.valueOf(tokens.size()), 8, RoundingMode.HALF_UP);
-        for (TokenEntity token : tokens) {
-            BigDecimal quantity = perTokenValue.divide(token.getCurrentPrice(), QUANTITY_SCALE, RoundingMode.HALF_UP);
-            UserWalletEntity wallet = findOrCreateWallet(user, token);
-            wallet.setQuantity(wallet.getQuantity().add(quantity).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
-            userWalletRepository.save(wallet);
-        }
+        TokenEntity greyToken = ensureGreyToken();
+        BigDecimal quantity = target.divide(greyToken.getCurrentPrice(), QUANTITY_SCALE, RoundingMode.HALF_UP);
+        UserWalletEntity wallet = findOrCreateWallet(user, greyToken);
+        BigDecimal current = wallet.getQuantity() == null ? ZERO_QUANTITY : wallet.getQuantity();
+        wallet.setQuantity(current.add(quantity).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
+        userWalletRepository.save(wallet);
     }
 
     @Transactional
@@ -134,6 +114,35 @@ public class PortfolioWalletService {
             wallet.setQuantity(ZERO_QUANTITY);
             return wallet;
         });
+    }
+
+    @Transactional
+    public TokenEntity ensureGreyToken() {
+        TokenEntity token = tokenRepository.findByNameIgnoreCase(GREY_TOKEN_NAME).orElseGet(() -> {
+            TokenEntity created = new TokenEntity();
+            created.setName(GREY_TOKEN_NAME);
+            return created;
+        });
+
+        boolean changed = token.getTokenId() == null;
+        if (!GREY_TOKEN_COLOR.equalsIgnoreCase(token.getColorCode())) {
+            token.setColorCode(GREY_TOKEN_COLOR);
+            changed = true;
+        }
+        if (token.getCurrentPrice() == null || token.getCurrentPrice().compareTo(GREY_TOKEN_PRICE) != 0) {
+            token.setCurrentPrice(GREY_TOKEN_PRICE);
+            changed = true;
+        }
+        if (token.getLastUpdate() == null) {
+            token.setLastUpdate(Instant.now());
+            changed = true;
+        }
+
+        return changed ? tokenRepository.save(token) : token;
+    }
+
+    public boolean isGreyToken(TokenEntity token) {
+        return token != null && GREY_TOKEN_NAME.equalsIgnoreCase(token.getName());
     }
 
     private BigDecimal holdingValue(UserWalletEntity wallet) {

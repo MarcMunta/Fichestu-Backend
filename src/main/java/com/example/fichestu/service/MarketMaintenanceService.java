@@ -29,7 +29,7 @@ public class MarketMaintenanceService {
     private static final BigDecimal BASE_MIN = new BigDecimal("1.00");
     private static final BigDecimal BASE_MAX = new BigDecimal("500.00");
     private static final BigDecimal RESET_PORTFOLIO_VALUE = new BigDecimal("200.00");
-    private static final LocalDate CASHLESS_PORTFOLIO_RESET_MARKER = LocalDate.of(2000, 1, 1);
+    private static final LocalDate CASHLESS_PORTFOLIO_RESET_MARKER = LocalDate.of(2000, 1, 2);
 
     private final TokenRepository tokenRepository;
     private final TokenPriceHistoryRepository tokenPriceHistoryRepository;
@@ -69,6 +69,7 @@ public class MarketMaintenanceService {
 
     @Transactional
     public void syncMarketState() {
+        ensureGreyToken();
         ensurePriceHistorySeeded();
         resetAllUsersToInitialPortfolioIfNeeded();
     }
@@ -84,10 +85,17 @@ public class MarketMaintenanceService {
             return false;
         }
 
+        TokenEntity greyToken = ensureGreyToken();
         ensurePriceHistorySeeded();
 
         List<TokenEntity> tokens = tokenRepository.findAllByOrderByTokenIdAsc();
         for (TokenEntity token : tokens) {
+            if (isGreyToken(token)) {
+                token.setCurrentPrice(PortfolioWalletService.GREY_TOKEN_PRICE);
+                token.setLastUpdate(Instant.now());
+                tokenRepository.save(token);
+                continue;
+            }
             BigDecimal newPrice = randomBasePrice();
             token.setCurrentPrice(newPrice);
             token.setLastUpdate(Instant.now());
@@ -98,7 +106,7 @@ public class MarketMaintenanceService {
         MarketResetAuditEntity audit = new MarketResetAuditEntity();
         audit.setBusinessDate(businessDate);
         audit.setZoneId(resetZone);
-        audit.setSummary("Reset diario ejecutado para " + tokens.size() + " tokens. Las carteras conservan sus fichas.");
+        audit.setSummary("Reset diario ejecutado para " + (tokens.size() - 1) + " fichas de mercado. " + greyToken.getName() + " conserva valor 1.00.");
         marketResetAuditRepository.save(audit);
 
         return true;
@@ -110,12 +118,17 @@ public class MarketMaintenanceService {
             return false;
         }
 
+        TokenEntity greyToken = ensureGreyToken();
         List<TokenEntity> tokens = tokenRepository.findAllByOrderByTokenIdAsc();
-        if (tokens.isEmpty()) {
-            return false;
-        }
 
         for (TokenEntity token : tokens) {
+            if (isGreyToken(token)) {
+                token.setCurrentPrice(PortfolioWalletService.GREY_TOKEN_PRICE);
+                token.setLastUpdate(Instant.now());
+                tokenRepository.save(token);
+                appendPriceHistory(token, PortfolioWalletService.GREY_TOKEN_PRICE);
+                continue;
+            }
             BigDecimal newPrice = randomBasePrice();
             token.setCurrentPrice(newPrice);
             token.setLastUpdate(Instant.now());
@@ -124,25 +137,22 @@ public class MarketMaintenanceService {
         }
 
         userWalletRepository.deleteAll();
-        BigDecimal perTokenValue = RESET_PORTFOLIO_VALUE.divide(BigDecimal.valueOf(tokens.size()), 8, RoundingMode.HALF_UP);
+        BigDecimal greyQuantity = RESET_PORTFOLIO_VALUE.divide(PortfolioWalletService.GREY_TOKEN_PRICE, 4, RoundingMode.HALF_UP);
         for (UserEntity user : userRepository.findAll()) {
             user.setFiatBalance(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
             userRepository.save(user);
-            for (TokenEntity token : tokens) {
-                BigDecimal quantity = perTokenValue.divide(token.getCurrentPrice(), 4, RoundingMode.HALF_UP);
-                UserWalletEntity wallet = new UserWalletEntity();
-                wallet.setId(new UserWalletId(user.getUserId(), token.getTokenId()));
-                wallet.setUser(user);
-                wallet.setToken(token);
-                wallet.setQuantity(quantity);
-                userWalletRepository.save(wallet);
-            }
+            UserWalletEntity wallet = new UserWalletEntity();
+            wallet.setId(new UserWalletId(user.getUserId(), greyToken.getTokenId()));
+            wallet.setUser(user);
+            wallet.setToken(greyToken);
+            wallet.setQuantity(greyQuantity);
+            userWalletRepository.save(wallet);
         }
 
         MarketResetAuditEntity audit = new MarketResetAuditEntity();
         audit.setBusinessDate(CASHLESS_PORTFOLIO_RESET_MARKER);
         audit.setZoneId(resetZone);
-        audit.setSummary("Reset inicial cashless: todos los usuarios pasan a 200 FTC en fichas.");
+        audit.setSummary("Reset inicial cashless: todos los usuarios pasan a 200 FTC en ficha gris.");
         marketResetAuditRepository.save(audit);
 
         return true;
@@ -156,6 +166,7 @@ public class MarketMaintenanceService {
 
     @Transactional
     public void ensurePriceHistorySeeded() {
+        ensureGreyToken();
         for (TokenEntity token : tokenRepository.findAllByOrderByTokenIdAsc()) {
             if (tokenPriceHistoryRepository.countByTokenTokenId(token.getTokenId()) > 0) {
                 continue;
@@ -175,6 +186,37 @@ public class MarketMaintenanceService {
         history.setToken(token);
         history.setPrice(price);
         tokenPriceHistoryRepository.save(history);
+    }
+
+    private TokenEntity ensureGreyToken() {
+        TokenEntity token = tokenRepository.findByNameIgnoreCase(PortfolioWalletService.GREY_TOKEN_NAME).orElseGet(() -> {
+            TokenEntity created = new TokenEntity();
+            created.setName(PortfolioWalletService.GREY_TOKEN_NAME);
+            created.setColorCode(PortfolioWalletService.GREY_TOKEN_COLOR);
+            created.setCurrentPrice(PortfolioWalletService.GREY_TOKEN_PRICE);
+            created.setLastUpdate(Instant.now());
+            return tokenRepository.save(created);
+        });
+
+        boolean changed = false;
+        if (!PortfolioWalletService.GREY_TOKEN_COLOR.equalsIgnoreCase(token.getColorCode())) {
+            token.setColorCode(PortfolioWalletService.GREY_TOKEN_COLOR);
+            changed = true;
+        }
+        if (token.getCurrentPrice() == null || token.getCurrentPrice().compareTo(PortfolioWalletService.GREY_TOKEN_PRICE) != 0) {
+            token.setCurrentPrice(PortfolioWalletService.GREY_TOKEN_PRICE);
+            changed = true;
+        }
+        if (token.getLastUpdate() == null) {
+            token.setLastUpdate(Instant.now());
+            changed = true;
+        }
+
+        return changed ? tokenRepository.save(token) : token;
+    }
+
+    private boolean isGreyToken(TokenEntity token) {
+        return token != null && PortfolioWalletService.GREY_TOKEN_NAME.equalsIgnoreCase(token.getName());
     }
 
 }

@@ -52,7 +52,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.tokens.length()").value(4))
+            .andExpect(jsonPath("$.tokens.length()").value(5))
             .andExpect(jsonPath("$.cashBalance").value(0.00))
             .andExpect(jsonPath("$.portfolioValue").value(200.00))
             .andExpect(jsonPath("$.totalBalance").value(200.00));
@@ -73,8 +73,8 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.cashBalance").value(0.00))
             .andExpect(jsonPath("$.totalBalance").value(200.00));
 
-        UserWalletEntity wallet = userWalletRepository.findByIdUserId(richUser.getUserId()).get(0);
-        assertThat(wallet.getQuantity()).isEqualByComparingTo(new BigDecimal("2.0000"));
+        assertThat(walletFor(richUser, "Ficha Roja").getQuantity()).isEqualByComparingTo(new BigDecimal("1.0000"));
+        assertThat(walletFor(richUser, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("150.0000"));
         assertThat(transactionLogRepository.findTop20ByUserUserIdOrderByCreatedAtDesc(richUser.getUserId()))
             .anyMatch(log -> "EXCHANGE_BUY".equals(log.getType()));
 
@@ -100,8 +100,8 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.cashBalance").value(0.00))
             .andExpect(jsonPath("$.portfolioValue").value(200.00))
             .andExpect(jsonPath("$.totalBalance").value(200.00))
-            .andExpect(jsonPath("$.tokens[0].holdingValue").value(150.00))
-            .andExpect(jsonPath("$.tokens[0].portfolioWeightPercent").value(75.00));
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(100.00))
+            .andExpect(jsonPath("$.tokens[0].portfolioWeightPercent").value(50.00));
 
         var red = findTokenByName("Ficha Roja");
         red.setCurrentPrice(new BigDecimal("25.00"));
@@ -117,10 +117,10 @@ class GameIntegrationTests extends IntegrationTestSupport {
             .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cashBalance").value(0.00))
-            .andExpect(jsonPath("$.portfolioValue").value(125.00))
-            .andExpect(jsonPath("$.totalBalance").value(125.00))
-            .andExpect(jsonPath("$.tokens[0].holdingValue").value(75.00))
-            .andExpect(jsonPath("$.tokens[0].holdingChangeValue").value(-75.00));
+            .andExpect(jsonPath("$.portfolioValue").value(150.00))
+            .andExpect(jsonPath("$.totalBalance").value(150.00))
+            .andExpect(jsonPath("$.tokens[0].holdingValue").value(50.00))
+            .andExpect(jsonPath("$.tokens[0].holdingChangeValue").value(-50.00));
     }
 
     @Test
@@ -138,9 +138,11 @@ class GameIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(post("/api/game/market/sell")
             .header("Authorization", bearerFor(user))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(objectMapper.writeValueAsString(Map.of("token", "FAZ", "quantity", 2))))
+            .content(objectMapper.writeValueAsString(Map.of("token", "FAZ", "quantity", 1))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cashBalance").value(0.00));
+
+        assertThat(walletFor(user, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("100.0000"));
 
         mockMvc.perform(post("/api/game/market/sell")
                 .header("Authorization", bearerFor(user))
@@ -174,8 +176,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
         var refreshedUser = userRepository.findById(user.getUserId()).orElseThrow();
         assertThat(refreshedUser.getFiatBalance()).isEqualByComparingTo(balanceBeforeReset);
         assertThat(findTokenByName("Ficha Roja").getCurrentPrice()).isNotEqualByComparingTo(priceBeforeTick);
+        assertThat(findTokenByName("Ficha Gris").getCurrentPrice()).isEqualByComparingTo(new BigDecimal("1.00"));
         assertThat(tokenPriceHistoryRepository.countByTokenTokenId(findTokenByName("Ficha Roja").getTokenId())).isGreaterThan(1);
-        assertThat(userWalletRepository.findByIdUserId(user.getUserId()).get(0).getQuantity())
+        assertThat(walletFor(user, "Ficha Verde").getQuantity())
             .isGreaterThan(BigDecimal.ZERO);
     }
 
@@ -618,6 +621,14 @@ class GameIntegrationTests extends IntegrationTestSupport {
             users.add(createUser("player" + i, "player" + i + "@test.com", "secret123", "USER", startingBalance));
         }
         return users;
+    }
+
+    private UserWalletEntity walletFor(UserEntity user, String tokenName) {
+        Integer tokenId = findTokenByName(tokenName).getTokenId();
+        return userWalletRepository.findByIdUserId(user.getUserId()).stream()
+            .filter(wallet -> wallet.getId() != null && tokenId.equals(wallet.getId().getTokenId()))
+            .findFirst()
+            .orElseThrow();
     }
 
     @TestConfiguration

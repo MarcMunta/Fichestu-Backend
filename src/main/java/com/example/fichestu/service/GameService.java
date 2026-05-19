@@ -934,18 +934,21 @@ public class GameService {
         marketMaintenanceService.syncMarketState();
 
         TokenEntity token = resolveToken(tokenAlias);
+        if (portfolioWalletService.isGreyToken(token)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La ficha gris solo se usa como moneda");
+        }
         UserWalletEntity wallet = portfolioWalletService.findOrCreateWallet(user, token);
         BigDecimal qty = BigDecimal.valueOf(quantity).setScale(4, RoundingMode.HALF_UP);
         BigDecimal amount = token.getCurrentPrice().multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);
 
         if (isBuy) {
-            portfolioWalletService.debitValue(user, amount, Set.of(token.getTokenId()), "comprar");
+            portfolioWalletService.debitGreyValue(user, amount, "comprar");
             wallet.setQuantity(wallet.getQuantity().add(qty));
-            logTransaction(user, "EXCHANGE_BUY", amount.negate(), "Cambio a " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
+            logTransaction(user, "EXCHANGE_BUY", amount.negate(), "Compra de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT) + " con ficha gris");
             notificationService.create(
                 user,
-                "Cambio realizado",
-                "Has cambiado fichas por " + quantity + " " + token.getName() + " (" + amount + " FTC).",
+                "Compra realizada",
+                "Has comprado " + quantity + " " + token.getName() + " por " + amount + " fichas grises.",
                 "MARKET_BUY"
             );
         } else {
@@ -953,12 +956,12 @@ public class GameService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No tienes suficientes fichas para vender");
             }
             wallet.setQuantity(wallet.getQuantity().subtract(qty));
-            portfolioWalletService.creditValue(user, amount, Set.of(token.getTokenId()));
-            logTransaction(user, "EXCHANGE_SELL", amount, "Cambio desde " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT));
+            portfolioWalletService.creditGreyValue(user, amount);
+            logTransaction(user, "EXCHANGE_SELL", amount, "Venta de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT) + " a ficha gris");
             notificationService.create(
                 user,
-                "Cambio realizado",
-                "Has cambiado " + quantity + " " + token.getName() + " por otras fichas (" + amount + " FTC).",
+                "Venta realizada",
+                "Has vendido " + quantity + " " + token.getName() + " por " + amount + " fichas grises.",
                 "MARKET_SELL"
             );
         }
@@ -984,6 +987,9 @@ public class GameService {
         UserEntity triggeredBy
     ) {
         TokenEntity token = resolveToken(tokenAlias);
+        if (portfolioWalletService.isGreyToken(token)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La ficha gris no puede recibir impactos de batalla");
+        }
         BigDecimal marketMultiplier = multiplier.min(MAX_MARKET_IMPACT_MULTIPLIER);
         BigDecimal nextPrice = token.getCurrentPrice().multiply(marketMultiplier).setScale(2, RoundingMode.HALF_UP);
         if (nextPrice.compareTo(MIN_TOKEN_PRICE) < 0) {
@@ -1697,6 +1703,7 @@ public class GameService {
             case "AZUL", "FAZ", "FICHA AZUL" -> "Ficha Azul";
             case "VERDE", "FVD", "FICHA VERDE" -> "Ficha Verde";
             case "DORADA", "FGD", "FICHA DORADA" -> "Ficha Dorada";
+            case "GRIS", "FGR", "INCOLORA", "FICHA GRIS", "FICHA INCOLORA" -> PortfolioWalletService.GREY_TOKEN_NAME;
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token no valido: " + tokenAlias);
         };
         return tokenRepository.findByNameIgnoreCase(tokenName)
@@ -1787,6 +1794,7 @@ public class GameService {
             case "FICHA AZUL" -> new TokenMeta("FAZ", colorCode == null ? "#0000FF" : colorCode);
             case "FICHA VERDE" -> new TokenMeta("FVD", colorCode == null ? "#00FF00" : colorCode);
             case "FICHA DORADA" -> new TokenMeta("FGD", colorCode == null ? "#FFD700" : colorCode);
+            case "FICHA GRIS", "FICHA INCOLORA" -> new TokenMeta("FGR", colorCode == null ? PortfolioWalletService.GREY_TOKEN_COLOR : colorCode);
             default -> {
                 String ticker = tokenName == null ? "TOK" : tokenName.replace("Ficha", "").trim().toUpperCase(Locale.ROOT);
                 ticker = ticker.length() >= 3 ? ticker.substring(0, 3) : ticker;
