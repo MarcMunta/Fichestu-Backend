@@ -19,7 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class PortfolioWalletService {
 
-    public static final BigDecimal INITIAL_TOKEN_QUANTITY = new BigDecimal("10.0000");
+    public static final BigDecimal INITIAL_PORTFOLIO_VALUE = new BigDecimal("200.00");
 
     private static final int MONEY_SCALE = 2;
     private static final int QUANTITY_SCALE = 4;
@@ -36,11 +36,7 @@ public class PortfolioWalletService {
 
     @Transactional
     public void grantInitialTokenWallets(UserEntity user) {
-        for (TokenEntity token : tokenRepository.findAllByOrderByTokenIdAsc()) {
-            UserWalletEntity wallet = findOrCreateWallet(user, token);
-            wallet.setQuantity(INITIAL_TOKEN_QUANTITY);
-            userWalletRepository.save(wallet);
-        }
+        creditValue(user, INITIAL_PORTFOLIO_VALUE, Set.of());
     }
 
     @Transactional(readOnly = true)

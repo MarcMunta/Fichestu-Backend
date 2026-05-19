@@ -38,7 +38,13 @@ class AuthIntegrationTests extends IntegrationTestSupport {
         assertThat(user.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(userWalletRepository.findByIdUserId(user.getUserId()))
             .hasSize(4)
-            .allMatch(wallet -> wallet.getQuantity().compareTo(new BigDecimal("10.0000")) == 0);
+            .extracting(wallet -> wallet.getQuantity())
+            .containsExactlyInAnyOrder(
+                new BigDecimal("1.0000"),
+                new BigDecimal("2.0000"),
+                new BigDecimal("5.0000"),
+                new BigDecimal("0.5000")
+            );
     }
 
     @Test

@@ -21,8 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MarketMaintenanceService {
 
-    private static final BigDecimal MIN_PRICE = new BigDecimal("0.50");
-    private static final BigDecimal BASE_MIN = new BigDecimal("5.00");
+    private static final BigDecimal BASE_MIN = new BigDecimal("1.00");
     private static final BigDecimal BASE_MAX = new BigDecimal("500.00");
 
     private final TokenRepository tokenRepository;
@@ -32,9 +31,6 @@ public class MarketMaintenanceService {
 
     @Value("${app.market.reset-zone:Europe/Madrid}")
     private String resetZone;
-
-    @Value("${app.market.tick-interval-ms:300000}")
-    private long tickIntervalMs;
 
     public MarketMaintenanceService(
         TokenRepository tokenRepository,
@@ -56,14 +52,12 @@ public class MarketMaintenanceService {
     @Scheduled(fixedDelayString = "${app.market.tick-interval-ms:300000}")
     public void scheduledMarketTick() {
         ensurePriceHistorySeeded();
-        advanceMarketIfStale();
     }
 
     @Transactional
     public void syncMarketState() {
         ensurePriceHistorySeeded();
         runDailyResetIfDue();
-        advanceMarketIfStale();
     }
 
     @Transactional
@@ -99,36 +93,8 @@ public class MarketMaintenanceService {
 
     @Transactional
     public boolean advanceMarketIfStale() {
-        List<TokenEntity> tokens = tokenRepository.findAllByOrderByTokenIdAsc();
-        if (tokens.isEmpty()) {
-            return false;
-        }
-
-        Instant lastUpdate = tokens.stream()
-            .map(TokenEntity::getLastUpdate)
-            .filter(value -> value != null)
-            .min(Instant::compareTo)
-            .orElse(Instant.EPOCH);
-
-        if (lastUpdate.plusMillis(tickIntervalMs).isAfter(Instant.now())) {
-            return false;
-        }
-
-        for (TokenEntity token : tokens) {
-            double factor = 0.95 + (randomProvider.nextDouble() * 0.13);
-            BigDecimal nextPrice = token.getCurrentPrice()
-                .multiply(BigDecimal.valueOf(factor))
-                .setScale(2, RoundingMode.HALF_UP);
-            if (nextPrice.compareTo(MIN_PRICE) < 0) {
-                nextPrice = MIN_PRICE;
-            }
-            token.setCurrentPrice(nextPrice);
-            token.setLastUpdate(Instant.now());
-            tokenRepository.save(token);
-            appendPriceHistory(token, nextPrice);
-        }
-
-        return true;
+        ensurePriceHistorySeeded();
+        return false;
     }
 
     @Transactional

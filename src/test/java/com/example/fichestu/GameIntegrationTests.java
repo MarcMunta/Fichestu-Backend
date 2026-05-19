@@ -151,19 +151,17 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
-    void marketUpdatesPersistPriceHistoryAndDailyResetIsIdempotent() {
+    void marketOnlyUpdatesPricesOnDailyResetAndResetIsIdempotent() {
         createDefaultTokens();
         markDailyResetExecuted(currentBusinessDate());
         var user = createUser("holder", "holder@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
         mockMvcPerformBuy(user, "FVD", 2);
 
-        tokenRepository.findAll().forEach(token -> {
-            token.setLastUpdate(Instant.EPOCH);
-            tokenRepository.save(token);
-        });
-        marketMaintenanceService.advanceMarketIfStale();
-        assertThat(tokenPriceHistoryRepository.countByTokenTokenId(findTokenByName("Ficha Roja").getTokenId())).isGreaterThan(1);
+        BigDecimal priceBeforeTick = findTokenByName("Ficha Roja").getCurrentPrice();
+        boolean minuteTickChangedPrices = marketMaintenanceService.advanceMarketIfStale();
+        assertThat(minuteTickChangedPrices).isFalse();
+        assertThat(findTokenByName("Ficha Roja").getCurrentPrice()).isEqualByComparingTo(priceBeforeTick);
 
         BigDecimal balanceBeforeReset = userRepository.findById(user.getUserId()).orElseThrow().getFiatBalance();
         LocalDate nextBusinessDate = currentBusinessDate().plusDays(1);
@@ -175,6 +173,8 @@ class GameIntegrationTests extends IntegrationTestSupport {
 
         var refreshedUser = userRepository.findById(user.getUserId()).orElseThrow();
         assertThat(refreshedUser.getFiatBalance()).isEqualByComparingTo(balanceBeforeReset);
+        assertThat(findTokenByName("Ficha Roja").getCurrentPrice()).isNotEqualByComparingTo(priceBeforeTick);
+        assertThat(tokenPriceHistoryRepository.countByTokenTokenId(findTokenByName("Ficha Roja").getTokenId())).isGreaterThan(1);
         assertThat(userWalletRepository.findByIdUserId(user.getUserId()).get(0).getQuantity())
             .isGreaterThan(BigDecimal.ZERO);
     }

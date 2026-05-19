@@ -48,7 +48,7 @@ public class AutomatedEmailService {
                 Hola %s,
 
                 Tu cuenta de Fichestu se ha creado correctamente.
-                Cartera inicial: 10 fichas de cada tipo.
+                Cartera inicial: 200 FTC repartidos en fichas.
 
                 Ya puedes iniciar sesion y empezar a jugar.
                 """.formatted(user.getUsername()),
