@@ -149,6 +149,7 @@ public class GameService {
     @Transactional
     public BootstrapResponse bootstrap() {
         UserEntity user = currentUserService.requireUserEntity();
+        detachUserFromActiveMatchesWithoutRefund(user);
         marketMaintenanceService.syncMarketState();
 
         List<TokenDto> tokens = buildTokenDtos(user);
@@ -469,6 +470,10 @@ public class GameService {
     @Transactional
     public void detachCurrentUserFromActiveMatchesWithoutRefund() {
         UserEntity user = currentUserService.requireUserEntity();
+        detachUserFromActiveMatchesWithoutRefund(user);
+    }
+
+    private void detachUserFromActiveMatchesWithoutRefund(UserEntity user) {
         List<MatchParticipantEntity> participants = new ArrayList<>(matchParticipantRepository.findByIdUserId(user.getUserId()));
         for (MatchParticipantEntity participant : participants) {
             GameSessionEntity session = participant.getMatch();

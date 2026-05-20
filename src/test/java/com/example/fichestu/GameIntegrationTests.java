@@ -305,6 +305,31 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void bootstrapAfterAppRestartDetachesStaleActiveMatchWithoutRefund() throws Exception {
+        createDefaultTokens();
+        UserEntity user = createUser("restartmatch", "restartmatch@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        String bearer = bearerFor(user);
+
+        String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
+
+        mockMvc.perform(get("/api/game/bootstrap")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00));
+
+        assertThat(walletFor(user, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("90.0000"));
+        assertThat(matchParticipantRepository.existsByIdMatchIdAndIdUserId(matchId, user.getUserId())).isFalse();
+        assertThat(gameSessionRepository.findById(matchId)).isEmpty();
+    }
+
+    @Test
     void reenteringWhileInMatchmakingDoesNotChargeTwice() throws Exception {
         createDefaultTokens();
         UserEntity user = createUser("reenter", "reenter@test.com", "secret123", "USER", new BigDecimal("100.00"));
