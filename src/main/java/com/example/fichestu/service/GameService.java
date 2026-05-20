@@ -325,7 +325,9 @@ public class GameService {
 
         if (!STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
             if (isRefundableEntryStatus(session.getStatus())) {
-                return abandonMatch(matchId);
+                MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
+                return abandonRefundableBeforeBattle(user, session, participant, "Matchmaking cancelado");
             }
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La partida ya no se puede cancelar");
         }
@@ -406,30 +408,14 @@ public class GameService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
 
         if (isRefundableEntryStatus(session.getStatus())) {
-            matchParticipantRepository.delete(participant);
-            refundBallEntry(user, matchId);
-            logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado antes del battle. Entrada devuelta.");
-            if (STATUS_PICKING.equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
-                UserEntity bot = findReplacementBotUser(session);
-                MatchParticipantEntity replacement = new MatchParticipantEntity();
-                replacement.setId(new MatchParticipantId(matchId, bot.getUserId()));
-                replacement.setMatch(session);
-                replacement.setUser(bot);
-                replacement.setSelectedBallNumber(participant.getSelectedBallNumber());
-                replacement.setMultiplierWon(participant.getMultiplierWon());
-                replacement.setCurrentHp(participant.getCurrentHp());
-                replacement.setAlive(participant.getAlive());
-                matchParticipantRepository.save(replacement);
-            } else {
-                closeIfMatchmakingIsEmpty(session);
-            }
+            detachParticipantWithoutRefund(session, participant);
             publishMatchChanged(session.getMatchId(), "MATCH_ABANDONED");
             return new EnterBallRoomResponse(
                 "Has abandonado la sala",
                 true,
                 null,
                 calculateFtcBalance(user),
-                new BallRoomDto("WAITING_ENTRY", "Has salido antes del battle. Entrada devuelta.", false, null, List.of(), List.of())
+                new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir.", false, null, List.of(), List.of())
             );
         }
 
@@ -437,6 +423,7 @@ public class GameService {
         closeIfOnlyBotsRemain(session);
         if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
             logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha salido. La partida se cierra porque solo quedaban bots.");
+            deleteIfNoHumanParticipantsRemain(session);
             return new EnterBallRoomResponse(
                 "Has salido de la partida",
                 true,
@@ -466,6 +453,7 @@ public class GameService {
             }
         }
         closeIfOnlyBotsRemain(session);
+        deleteIfNoHumanParticipantsRemain(session);
         logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha salido. Un bot ocupa su plaza.");
         publishMatchChanged(session.getMatchId(), "MATCH_ABANDONED");
 
@@ -476,6 +464,20 @@ public class GameService {
             calculateFtcBalance(user),
             new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
         );
+    }
+
+    @Transactional
+    public void detachCurrentUserFromActiveMatchesWithoutRefund() {
+        UserEntity user = currentUserService.requireUserEntity();
+        List<MatchParticipantEntity> participants = new ArrayList<>(matchParticipantRepository.findByIdUserId(user.getUserId()));
+        for (MatchParticipantEntity participant : participants) {
+            GameSessionEntity session = participant.getMatch();
+            if (session == null) {
+                continue;
+            }
+            detachParticipantWithoutRefund(session, participant);
+            publishMatchChanged(session.getMatchId(), "MATCH_ABANDONED");
+        }
     }
 
     @Transactional
@@ -1644,6 +1646,78 @@ public class GameService {
             return;
         }
         deleteSessionRow(session);
+    }
+
+    private EnterBallRoomResponse abandonRefundableBeforeBattle(
+        UserEntity user,
+        GameSessionEntity session,
+        MatchParticipantEntity participant,
+        String message
+    ) {
+        Integer matchId = session.getMatchId();
+        matchParticipantRepository.delete(participant);
+        refundBallEntry(user, matchId);
+        logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado antes del battle. Entrada devuelta.");
+        if (STATUS_PICKING.equalsIgnoreCase(session.getStatus()) || "READY_REVEAL".equalsIgnoreCase(session.getStatus())) {
+            replaceParticipantWithBot(session, participant);
+        } else {
+            closeIfMatchmakingIsEmpty(session);
+        }
+        publishMatchChanged(session.getMatchId(), "MATCH_ABANDONED");
+        return new EnterBallRoomResponse(
+            message,
+            true,
+            null,
+            calculateFtcBalance(user),
+            new BallRoomDto("WAITING_ENTRY", message, false, null, List.of(), List.of())
+        );
+    }
+
+    private void detachParticipantWithoutRefund(GameSessionEntity session, MatchParticipantEntity participant) {
+        String status = session.getStatus();
+        matchParticipantRepository.delete(participant);
+
+        if (STATUS_CLOSED.equalsIgnoreCase(status) || "FINISHED".equalsIgnoreCase(status)) {
+            deleteIfNoHumanParticipantsRemain(session);
+            return;
+        }
+
+        if (STATUS_MATCHMAKING.equalsIgnoreCase(status)) {
+            closeIfMatchmakingIsEmpty(session);
+            return;
+        }
+
+        replaceParticipantWithBot(session, participant);
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        if (STATUS_PICKING.equalsIgnoreCase(status)) {
+            assignBotBallPicks(session, participants);
+            if (matchParticipantRepository.countByIdMatchIdAndSelectedBallNumberIsNotNull(session.getMatchId()) >= ROOM_SIZE) {
+                session.setStatus("READY_REVEAL");
+                gameSessionRepository.save(session);
+            }
+        }
+        closeIfOnlyBotsRemain(session);
+        deleteIfNoHumanParticipantsRemain(session);
+    }
+
+    private void replaceParticipantWithBot(GameSessionEntity session, MatchParticipantEntity participant) {
+        UserEntity bot = findReplacementBotUser(session);
+        MatchParticipantEntity replacement = new MatchParticipantEntity();
+        replacement.setId(new MatchParticipantId(session.getMatchId(), bot.getUserId()));
+        replacement.setMatch(session);
+        replacement.setUser(bot);
+        replacement.setSelectedBallNumber(participant.getSelectedBallNumber());
+        replacement.setMultiplierWon(participant.getMultiplierWon());
+        replacement.setCurrentHp(participant.getCurrentHp());
+        replacement.setAlive(participant.getAlive());
+        matchParticipantRepository.save(replacement);
+    }
+
+    private void deleteIfNoHumanParticipantsRemain(GameSessionEntity session) {
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        if (participants.stream().noneMatch(participant -> !isBotUser(participant.getUser()))) {
+            deleteSessionRow(session);
+        }
     }
 
     private void deleteSessionRow(GameSessionEntity session) {
