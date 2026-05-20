@@ -1116,7 +1116,6 @@ public class GameService {
     }
 
     private BattleDto buildBattleDto(GameSessionEntity session, Integer userId, String selectedAction) {
-        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
         String phase;
         if ("IN_PROGRESS".equalsIgnoreCase(session.getStatus())) {
             phase = "IN_PROGRESS";
@@ -1127,6 +1126,27 @@ public class GameService {
         } else {
             phase = "LOCKED";
         }
+
+        if ("LOCKED".equals(phase)) {
+            return new BattleDto(
+                phase,
+                0,
+                null,
+                Instant.now().toEpochMilli(),
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                selectedAction == null ? "ATTACK" : selectedAction,
+                false,
+                List.of("Completa el sorteo de bolas para desbloquear el Battle Royale."),
+                List.of()
+            );
+        }
+
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
 
         List<BattlePlayerDto> players = participants.stream()
             .map(participant -> new BattlePlayerDto(
