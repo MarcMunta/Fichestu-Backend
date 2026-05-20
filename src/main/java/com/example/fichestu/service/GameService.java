@@ -65,7 +65,7 @@ public class GameService {
 
     private static final BigDecimal BALL_ENTRY_COST = new BigDecimal("10.00");
     private static final BigDecimal REWARDED_AMOUNT = new BigDecimal("25.00");
-    private static final BigDecimal CASHLESS_BALANCE = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final BigDecimal MIN_TOKEN_PRICE = new BigDecimal("0.50");
     private static final BigDecimal MAX_TOKEN_PRICE = new BigDecimal("5000.00");
     private static final BigDecimal MAX_MARKET_IMPACT_MULTIPLIER = new BigDecimal("3.00");
@@ -152,7 +152,7 @@ public class GameService {
         marketMaintenanceService.syncMarketState();
 
         List<TokenDto> tokens = buildTokenDtos(user);
-        BigDecimal portfolioValue = calculatePortfolioValue(tokens);
+        BalanceSummary balance = calculateBalanceSummary(tokens);
         List<com.example.fichestu.api.GameDtos.BadgeDto> badges = playerProfileReadService.loadBadgesForUser(user.getUserId());
         ProfileStatsDto stats = playerProfileReadService.loadStatsForUser(user.getUserId());
 
@@ -161,9 +161,9 @@ public class GameService {
             true,
             user.getUserId(),
             user.getUsername(),
-            CASHLESS_BALANCE,
-            portfolioValue,
-            calculateTotalBalance(portfolioValue),
+            balance.ftcBalance(),
+            balance.ftValue(),
+            balance.ftvValue(),
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             tokens,
             badges,
@@ -177,13 +177,13 @@ public class GameService {
         marketMaintenanceService.syncMarketState();
 
         List<TokenDto> tokens = buildTokenDtos(user);
-        BigDecimal portfolioValue = calculatePortfolioValue(tokens);
+        BalanceSummary balance = calculateBalanceSummary(tokens);
         return new MarketSnapshotResponse(
             "Mercado cargado",
             true,
-            CASHLESS_BALANCE,
-            portfolioValue,
-            calculateTotalBalance(portfolioValue),
+            balance.ftcBalance(),
+            balance.ftValue(),
+            balance.ftvValue(),
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             (int) transactionLogRepository.countByUserUserIdAndType(user.getUserId(), TYPE_REWARDED),
             tokens,
@@ -220,7 +220,7 @@ public class GameService {
                 "Ya estas en una sala activa",
                 true,
                 session.getMatchId(),
-                CASHLESS_BALANCE,
+                calculateFtcBalance(user),
                 buildBallRoomDto(session, user.getUserId())
             );
         }
@@ -251,7 +251,7 @@ public class GameService {
             "Entrada pagada. Buscando jugadores",
             true,
             session.getMatchId(),
-            CASHLESS_BALANCE,
+            calculateFtcBalance(user),
             buildBallRoomDto(session, user.getUserId())
         );
     }
@@ -272,7 +272,7 @@ public class GameService {
                 "Ya perteneces a esta sala",
                 true,
                 existing.getMatchId(),
-                CASHLESS_BALANCE,
+                calculateFtcBalance(user),
                 buildBallRoomDto(existing, user.getUserId())
             );
         }
@@ -312,7 +312,7 @@ public class GameService {
             "Te has unido a la sala",
             true,
             session.getMatchId(),
-            CASHLESS_BALANCE,
+            calculateFtcBalance(user),
             buildBallRoomDto(session, user.getUserId())
         );
     }
@@ -348,7 +348,7 @@ public class GameService {
             "Matchmaking cancelado",
             true,
             null,
-            CASHLESS_BALANCE,
+            calculateFtcBalance(user),
             new BallRoomDto("WAITING_ENTRY", "Matchmaking cancelado", false, null, List.of(), List.of())
         );
     }
@@ -364,7 +364,7 @@ public class GameService {
                 "La sala ya ha avanzado",
                 true,
                 session.getMatchId(),
-                CASHLESS_BALANCE,
+                calculateFtcBalance(user),
                 buildBallRoomDto(session, user.getUserId())
             );
         }
@@ -381,7 +381,7 @@ public class GameService {
             "Has abandonado el matchmaking",
             true,
             null,
-            CASHLESS_BALANCE,
+            calculateFtcBalance(user),
             new BallRoomDto("WAITING_ENTRY", "Has abandonado la sala. Entrada devuelta.", false, null, List.of(), List.of())
         );
     }
@@ -397,7 +397,7 @@ public class GameService {
                 "La partida ya estaba cerrada",
                 true,
                 null,
-                CASHLESS_BALANCE,
+                calculateFtcBalance(user),
                 new BallRoomDto("WAITING_ENTRY", "No hay partida activa.", false, null, List.of(), List.of())
             );
         }
@@ -428,7 +428,7 @@ public class GameService {
                 "Has abandonado la sala",
                 true,
                 null,
-                CASHLESS_BALANCE,
+                calculateFtcBalance(user),
                 new BallRoomDto("WAITING_ENTRY", "Has salido antes del battle. Entrada devuelta.", false, null, List.of(), List.of())
             );
         }
@@ -441,7 +441,7 @@ public class GameService {
                 "Has salido de la partida",
                 true,
                 null,
-                CASHLESS_BALANCE,
+                calculateFtcBalance(user),
                 new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
             );
         }
@@ -473,7 +473,7 @@ public class GameService {
             "Has salido de la partida",
             true,
             null,
-            CASHLESS_BALANCE,
+            calculateFtcBalance(user),
             new BallRoomDto("WAITING_ENTRY", "Has salido de la partida. La entrada no se devuelve al salir de la app.", false, null, List.of(), List.of())
         );
     }
@@ -921,14 +921,14 @@ public class GameService {
         notificationService.create(
             user,
             "Rewarded aplicado",
-            "Has recibido " + REWARDED_AMOUNT + " FTC en fichas.",
+            "Has recibido " + REWARDED_AMOUNT + " Stum.",
             "REWARDED"
         );
 
         return new CooldownResponse(
             "Rewarded aplicado",
             true,
-            CASHLESS_BALANCE,
+            calculateFtcBalance(user),
             playerProfileReadService.currentRewardedCooldownSeconds(user.getUserId()),
             (int) transactionLogRepository.countByUserUserIdAndType(user.getUserId(), TYPE_REWARDED)
         );
@@ -944,7 +944,7 @@ public class GameService {
 
         TokenEntity token = resolveToken(tokenAlias);
         if (portfolioWalletService.isGreyToken(token)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La ficha gris solo se usa como moneda");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Stum solo se usa como moneda");
         }
         UserWalletEntity wallet = portfolioWalletService.findOrCreateWallet(user, token);
         BigDecimal qty = BigDecimal.valueOf(quantity).setScale(4, RoundingMode.HALF_UP);
@@ -953,11 +953,11 @@ public class GameService {
         if (isBuy) {
             portfolioWalletService.debitGreyValue(user, amount, "comprar");
             wallet.setQuantity(wallet.getQuantity().add(qty));
-            logTransaction(user, "EXCHANGE_BUY", amount.negate(), "Compra de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT) + " con ficha gris");
+            logTransaction(user, "EXCHANGE_BUY", amount.negate(), "Compra de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT) + " con Stum");
             notificationService.create(
                 user,
                 "Compra realizada",
-                "Has comprado " + quantity + " " + token.getName() + " por " + amount + " fichas grises.",
+                "Has comprado " + quantity + " " + token.getName() + " por " + amount + " Stum.",
                 "MARKET_BUY"
             );
         } else {
@@ -966,11 +966,11 @@ public class GameService {
             }
             wallet.setQuantity(wallet.getQuantity().subtract(qty));
             portfolioWalletService.creditGreyValue(user, amount);
-            logTransaction(user, "EXCHANGE_SELL", amount, "Venta de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT) + " a ficha gris");
+            logTransaction(user, "EXCHANGE_SELL", amount, "Venta de " + quantity + " " + tokenAlias.toUpperCase(Locale.ROOT) + " a Stum");
             notificationService.create(
                 user,
                 "Venta realizada",
-                "Has vendido " + quantity + " " + token.getName() + " por " + amount + " fichas grises.",
+                "Has vendido " + quantity + " " + token.getName() + " por " + amount + " Stum.",
                 "MARKET_SELL"
             );
         }
@@ -978,13 +978,13 @@ public class GameService {
         userWalletRepository.save(wallet);
 
         List<TokenDto> tokens = buildTokenDtos(user);
-        BigDecimal portfolioValue = calculatePortfolioValue(tokens);
+        BalanceSummary balance = calculateBalanceSummary(tokens);
         return new WalletResponse(
             isBuy ? "Cambio realizado" : "Cambio realizado",
             true,
-            CASHLESS_BALANCE,
-            portfolioValue,
-            calculateTotalBalance(portfolioValue),
+            balance.ftcBalance(),
+            balance.ftValue(),
+            balance.ftvValue(),
             tokens
         );
     }
@@ -997,7 +997,7 @@ public class GameService {
     ) {
         TokenEntity token = resolveToken(tokenAlias);
         if (portfolioWalletService.isGreyToken(token)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La ficha gris no puede recibir impactos de batalla");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Stum no puede recibir impactos de batalla");
         }
         BigDecimal marketMultiplier = multiplier.min(MAX_MARKET_IMPACT_MULTIPLIER);
         BigDecimal nextPrice = token.getCurrentPrice().multiply(marketMultiplier).setScale(2, RoundingMode.HALF_UP);
@@ -1232,14 +1232,16 @@ public class GameService {
 
         List<TokenEntity> marketTokens = tokenRepository.findAllByOrderByTokenIdAsc();
         Map<Integer, BigDecimal> holdingValueByToken = new HashMap<>();
-        BigDecimal portfolioValue = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal ftValue = ZERO_MONEY;
         for (TokenEntity token : marketTokens) {
             BigDecimal holdings = walletByToken.getOrDefault(token.getTokenId(), BigDecimal.ZERO);
             BigDecimal holdingValue = token.getCurrentPrice()
                 .multiply(holdings)
                 .setScale(2, RoundingMode.HALF_UP);
             holdingValueByToken.put(token.getTokenId(), holdingValue);
-            portfolioValue = portfolioValue.add(holdingValue).setScale(2, RoundingMode.HALF_UP);
+            if (!portfolioWalletService.isGreyToken(token)) {
+                ftValue = ftValue.add(holdingValue).setScale(2, RoundingMode.HALF_UP);
+            }
         }
 
         List<TokenDto> tokens = new ArrayList<>();
@@ -1258,15 +1260,15 @@ public class GameService {
                 .subtract(previous)
                 .multiply(holdings)
                 .setScale(2, RoundingMode.HALF_UP);
-            BigDecimal portfolioWeightPercent = portfolioValue.compareTo(BigDecimal.ZERO) == 0
-                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+            BigDecimal portfolioWeightPercent = ftValue.compareTo(BigDecimal.ZERO) == 0 || portfolioWalletService.isGreyToken(token)
+                ? ZERO_MONEY
                 : holdingValue
                     .multiply(new BigDecimal("100"))
-                    .divide(portfolioValue, 2, RoundingMode.HALF_UP);
+                    .divide(ftValue, 2, RoundingMode.HALF_UP);
 
             tokens.add(new TokenDto(
                 token.getTokenId(),
-                token.getName(),
+                portfolioWalletService.isGreyToken(token) ? "Stum" : token.getName(),
                 meta.ticker(),
                 meta.colorCode(),
                 token.getCurrentPrice(),
@@ -1284,12 +1286,42 @@ public class GameService {
 
     private BigDecimal calculatePortfolioValue(List<TokenDto> tokens) {
         return tokens.stream()
+            .filter(token -> !isFtcToken(token))
             .map(TokenDto::holdingValue)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+            .reduce(ZERO_MONEY, BigDecimal::add)
+            .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateTotalBalance(BigDecimal portfolioValue) {
-        return portfolioValue.setScale(2, RoundingMode.HALF_UP);
+    private BigDecimal calculateFtcBalance(List<TokenDto> tokens) {
+        return tokens.stream()
+            .filter(this::isFtcToken)
+            .map(TokenDto::holdingValue)
+            .reduce(ZERO_MONEY, BigDecimal::add)
+            .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateFtcBalance(UserEntity user) {
+        return userWalletRepository.findByIdUserId(user.getUserId()).stream()
+            .filter(wallet -> wallet.getToken() != null && portfolioWalletService.isGreyToken(wallet.getToken()))
+            .map(wallet -> wallet.getToken().getCurrentPrice()
+                .multiply(wallet.getQuantity() == null ? BigDecimal.ZERO : wallet.getQuantity())
+                .setScale(2, RoundingMode.HALF_UP))
+            .reduce(ZERO_MONEY, BigDecimal::add)
+            .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BalanceSummary calculateBalanceSummary(List<TokenDto> tokens) {
+        BigDecimal ftcBalance = calculateFtcBalance(tokens);
+        BigDecimal ftValue = calculatePortfolioValue(tokens);
+        return new BalanceSummary(
+            ftcBalance,
+            ftValue,
+            ftcBalance.add(ftValue).setScale(2, RoundingMode.HALF_UP)
+        );
+    }
+
+    private boolean isFtcToken(TokenDto token) {
+        return token != null && ("STUM".equalsIgnoreCase(token.ticker()) || "STUM".equalsIgnoreCase(token.name()));
     }
 
     private List<TransactionDto> buildTransactionDtos(Integer userId) {
@@ -1386,7 +1418,7 @@ public class GameService {
             "Te has unido a una sala abierta",
             true,
             session.getMatchId(),
-            CASHLESS_BALANCE,
+            calculateFtcBalance(user),
             buildBallRoomDto(session, user.getUserId())
         );
     }
@@ -1865,7 +1897,7 @@ public class GameService {
             case "AZUL", "FAZ", "FICHA AZUL" -> "Ficha Azul";
             case "VERDE", "FVD", "FICHA VERDE" -> "Ficha Verde";
             case "DORADA", "FGD", "FICHA DORADA" -> "Ficha Dorada";
-            case "GRIS", "FGR", "INCOLORA", "FICHA GRIS", "FICHA INCOLORA" -> PortfolioWalletService.GREY_TOKEN_NAME;
+            case "GRIS", "FGR", "STUM", "INCOLORA", "FICHA GRIS", "FICHA INCOLORA" -> PortfolioWalletService.GREY_TOKEN_NAME;
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token no valido: " + tokenAlias);
         };
         return tokenRepository.findByNameIgnoreCase(tokenName)
@@ -1956,7 +1988,7 @@ public class GameService {
             case "FICHA AZUL" -> new TokenMeta("FAZ", colorCode == null ? "#0000FF" : colorCode);
             case "FICHA VERDE" -> new TokenMeta("FVD", colorCode == null ? "#00FF00" : colorCode);
             case "FICHA DORADA" -> new TokenMeta("FGD", colorCode == null ? "#FFD700" : colorCode);
-            case "FICHA GRIS", "FICHA INCOLORA" -> new TokenMeta("FGR", colorCode == null ? PortfolioWalletService.GREY_TOKEN_COLOR : colorCode);
+            case "FICHA GRIS", "FICHA INCOLORA", "STUM" -> new TokenMeta("STUM", colorCode == null ? PortfolioWalletService.GREY_TOKEN_COLOR : colorCode);
             default -> {
                 String ticker = tokenName == null ? "TOK" : tokenName.replace("Ficha", "").trim().toUpperCase(Locale.ROOT);
                 ticker = ticker.length() >= 3 ? ticker.substring(0, 3) : ticker;
@@ -1966,5 +1998,8 @@ public class GameService {
     }
 
     private record TokenMeta(String ticker, String colorCode) {
+    }
+
+    private record BalanceSummary(BigDecimal ftcBalance, BigDecimal ftValue, BigDecimal ftvValue) {
     }
 }

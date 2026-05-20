@@ -48,7 +48,7 @@ public class AutomatedEmailService {
                 Hola %s,
 
                 Tu cuenta de Fichestu se ha creado correctamente.
-                Cartera inicial: 200 FTC repartidos en fichas.
+                Cartera inicial: 200 Stum.
 
                 Ya puedes iniciar sesion y empezar a jugar.
                 """.formatted(user.getUsername()),
@@ -66,7 +66,7 @@ public class AutomatedEmailService {
                 Se ha registrado un movimiento en tu cuenta.
 
                 Tipo: %s
-                Importe: %s FTC
+                Importe: %s Stum
                 Detalle: %s
                 El valor total depende del precio actual de tus fichas.
                 """.formatted(

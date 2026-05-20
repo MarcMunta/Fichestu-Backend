@@ -49,7 +49,7 @@ class AutomatedEmailServiceTests {
         assertThat(mailSender.message.getTo()).containsExactly("alice@test.com");
         assertThat(mailSender.message.getSubject()).isEqualTo("Movimiento en tu cuenta Fichestu");
         assertThat(mailSender.message.getText()).contains("Tipo: BUY");
-        assertThat(mailSender.message.getText()).contains("Importe: -50.00 FTC");
+        assertThat(mailSender.message.getText()).contains("Importe: -50.00 Stum");
         assertThat(mailSender.message.getText()).contains("Compra de 1 FRO");
     }
 

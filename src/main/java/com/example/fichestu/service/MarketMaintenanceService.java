@@ -62,7 +62,10 @@ public class MarketMaintenanceService {
         runDailyResetIfDue();
     }
 
-    @Scheduled(fixedDelayString = "${app.market.tick-interval-ms:300000}")
+    @Scheduled(
+        fixedDelayString = "${app.market.tick-interval-ms:300000}",
+        initialDelayString = "${app.market.tick-initial-delay-ms:${app.market.tick-interval-ms:300000}}"
+    )
     public void scheduledMarketTick() {
         ensurePriceHistorySeeded();
     }
@@ -164,7 +167,7 @@ public class MarketMaintenanceService {
         MarketResetAuditEntity audit = new MarketResetAuditEntity();
         audit.setBusinessDate(CASHLESS_PORTFOLIO_RESET_MARKER);
         audit.setZoneId(resetZone);
-        audit.setSummary("Reset inicial cashless: todos los usuarios pasan a 10 fichas de cada mercado y 200 fichas grises.");
+        audit.setSummary("Reset inicial Stum: todos los usuarios pasan a 10 fichas de cada mercado y 200 Stum.");
         marketResetAuditRepository.save(audit);
 
         return true;
