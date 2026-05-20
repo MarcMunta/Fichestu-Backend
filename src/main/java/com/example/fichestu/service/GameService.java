@@ -1667,13 +1667,33 @@ public class GameService {
     }
 
     private void createParticipant(GameSessionEntity session, UserEntity user) {
+        MatchParticipantId participantId = new MatchParticipantId(session.getMatchId(), user.getUserId());
+        if (matchParticipantRepository.existsById(participantId)) {
+            return;
+        }
+        BigDecimal multiplier = randomMultiplier();
+
+        if (datasourceUrl != null && datasourceUrl.toLowerCase(Locale.ROOT).contains("postgresql")) {
+            entityManager.createNativeQuery("""
+                    insert into match_participants (match_id, user_id, multiplier_won, current_hp, is_alive)
+                    values (:matchId, :userId, :multiplierWon, :currentHp, true)
+                    on conflict (match_id, user_id) do nothing
+                    """)
+                .setParameter("matchId", session.getMatchId())
+                .setParameter("userId", user.getUserId())
+                .setParameter("multiplierWon", multiplier)
+                .setParameter("currentHp", INITIAL_HP)
+                .executeUpdate();
+            return;
+        }
+
         MatchParticipantEntity participant = new MatchParticipantEntity();
-        participant.setId(new MatchParticipantId(session.getMatchId(), user.getUserId()));
+        participant.setId(participantId);
         participant.setMatch(session);
         participant.setUser(user);
         participant.setCurrentHp(INITIAL_HP);
         participant.setAlive(true);
-        participant.setMultiplierWon(randomMultiplier());
+        participant.setMultiplierWon(multiplier);
         matchParticipantRepository.save(participant);
     }
 
