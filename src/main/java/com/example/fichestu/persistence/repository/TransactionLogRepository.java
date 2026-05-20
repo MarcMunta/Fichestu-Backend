@@ -10,6 +10,12 @@ public interface TransactionLogRepository extends JpaRepository<TransactionLogEn
 
     Optional<TransactionLogEntity> findTopByUserUserIdAndTypeOrderByCreatedAtDesc(Integer userId, String type);
 
+    Optional<TransactionLogEntity> findTopByUserUserIdAndTypeAndDescriptionStartingWithOrderByCreatedAtDesc(
+        Integer userId,
+        String type,
+        String description
+    );
+
     boolean existsByUserUserIdAndTypeAndDescription(Integer userId, String type, String description);
 
     List<TransactionLogEntity> findTop20ByUserUserIdOrderByCreatedAtDesc(Integer userId);

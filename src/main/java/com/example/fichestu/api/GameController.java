@@ -2,6 +2,7 @@ package com.example.fichestu.api;
 
 import com.example.fichestu.api.GameDtos.BattleActionRequest;
 import com.example.fichestu.api.GameDtos.CooldownResponse;
+import com.example.fichestu.api.GameDtos.EnterBallRoomRequest;
 import com.example.fichestu.api.GameDtos.EnterBallRoomResponse;
 import com.example.fichestu.api.GameDtos.GenericMessageResponse;
 import com.example.fichestu.api.GameDtos.MarketSnapshotResponse;
@@ -55,8 +56,8 @@ public class GameController {
     }
 
     @PostMapping("/ball-room/enter")
-    public EnterBallRoomResponse enterBallRoom() {
-        return gameService.enterBallRoom();
+    public EnterBallRoomResponse enterBallRoom(@RequestBody(required = false) EnterBallRoomRequest request) {
+        return gameService.enterBallRoom(request);
     }
 
     @PostMapping("/matches/{matchId}/join")

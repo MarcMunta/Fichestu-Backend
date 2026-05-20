@@ -7,6 +7,7 @@ import com.example.fichestu.api.GameDtos.BattleDto;
 import com.example.fichestu.api.GameDtos.BattlePlayerDto;
 import com.example.fichestu.api.GameDtos.BootstrapResponse;
 import com.example.fichestu.api.GameDtos.CooldownResponse;
+import com.example.fichestu.api.GameDtos.EnterBallRoomRequest;
 import com.example.fichestu.api.GameDtos.EnterBallRoomResponse;
 import com.example.fichestu.api.GameDtos.GenericMessageResponse;
 import com.example.fichestu.api.GameDtos.MarketSnapshotResponse;
@@ -37,6 +38,7 @@ import com.example.fichestu.persistence.repository.UserWalletRepository;
 import com.example.fichestu.realtime.MatchRealtimeService;
 import com.example.fichestu.security.CurrentUserService;
 import com.example.fichestu.support.RandomProvider;
+import com.example.fichestu.service.PortfolioWalletService.EntryDebit;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
@@ -201,8 +203,14 @@ public class GameService {
 
     @Transactional
     public EnterBallRoomResponse enterBallRoom() {
+        return enterBallRoom(null);
+    }
+
+    @Transactional
+    public EnterBallRoomResponse enterBallRoom(EnterBallRoomRequest request) {
         lockMatchmakingQueue();
         UserEntity user = currentUserService.requireUserEntity();
+        List<Integer> paymentTokenIds = normalizePaymentTokenIds(request);
 
         Optional<GameSessionEntity> currentSession = findCurrentSession(user.getUserId());
         if (currentSession.isPresent()) {
@@ -219,7 +227,7 @@ public class GameService {
 
         Optional<GameSessionEntity> availableSession = findAvailableMatchmakingSession();
         if (availableSession.isPresent()) {
-            return joinAvailableMatchmakingSession(user, availableSession.get().getMatchId());
+            return joinAvailableMatchmakingSession(user, availableSession.get().getMatchId(), paymentTokenIds);
         }
 
         GameSessionEntity session = new GameSessionEntity();
@@ -227,8 +235,8 @@ public class GameService {
         session.setMatchmakingDeadline(Instant.now().plusSeconds(MATCHMAKING_SECONDS));
         session = gameSessionRepository.save(session);
 
-        ensureSufficientBalance(user, "entrar en la sala");
-        debitBallEntry(user, session.getMatchId());
+        ensureSufficientBalance(user, paymentTokenIds, "entrar en la sala");
+        debitBallEntry(user, session.getMatchId(), paymentTokenIds);
         createParticipant(session, user);
         logEvent(session, "MATCHMAKING_STARTED", user.getUsername() + " ha pagado la entrada y entra en matchmaking.");
         notificationService.create(
@@ -281,8 +289,8 @@ public class GameService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La sala ya no acepta jugadores");
         }
 
-        ensureSufficientBalance(user, "unirte a la sala");
-        debitBallEntry(user, matchId);
+        ensureSufficientBalance(user, List.of(), "unirte a la sala");
+        debitBallEntry(user, matchId, List.of());
         createParticipant(session, user);
 
         long newCount = matchParticipantRepository.countByIdMatchId(matchId);
@@ -1051,20 +1059,25 @@ public class GameService {
             ))
             .toList();
 
+        boolean shouldSendBalls = STATUS_PICKING.equalsIgnoreCase(session.getStatus())
+            || "READY_REVEAL".equalsIgnoreCase(session.getStatus())
+            || isMultiplierVisible(session.getStatus());
         List<BallOptionDto> balls = new ArrayList<>();
-        for (int ballNumber = 1; ballNumber <= BALL_COUNT; ballNumber++) {
-            Integer currentBall = ballNumber;
-            Integer pickedBy = participants.stream()
-                .filter(participant -> currentBall.equals(participant.getSelectedBallNumber()))
-                .map(participant -> participant.getUser().getUserId())
-                .findFirst()
-                .orElse(null);
+        if (shouldSendBalls) {
+            for (int ballNumber = 1; ballNumber <= BALL_COUNT; ballNumber++) {
+                Integer currentBall = ballNumber;
+                Integer pickedBy = participants.stream()
+                    .filter(participant -> currentBall.equals(participant.getSelectedBallNumber()))
+                    .map(participant -> participant.getUser().getUserId())
+                    .findFirst()
+                    .orElse(null);
 
-            balls.add(new BallOptionDto(
-                ballNumber,
-                isMultiplierVisible(session.getStatus()) ? multiplierByBall.getOrDefault(ballNumber, 1.0) : null,
-                pickedBy == null ? null : String.valueOf(pickedBy)
-            ));
+                balls.add(new BallOptionDto(
+                    ballNumber,
+                    isMultiplierVisible(session.getStatus()) ? multiplierByBall.getOrDefault(ballNumber, 1.0) : null,
+                    pickedBy == null ? null : String.valueOf(pickedBy)
+                ));
+            }
         }
 
         boolean canReveal = participants.size() == ROOM_SIZE
@@ -1327,18 +1340,18 @@ public class GameService {
         gameSessionRepository.save(session);
     }
 
-    private EnterBallRoomResponse joinAvailableMatchmakingSession(UserEntity user, Integer matchId) {
+    private EnterBallRoomResponse joinAvailableMatchmakingSession(UserEntity user, Integer matchId, List<Integer> paymentTokenIds) {
         GameSessionEntity session = gameSessionRepository.findByMatchIdForUpdate(matchId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match no encontrado"));
         resolveMatchmakingIfReady(session);
 
         long currentPlayers = matchParticipantRepository.countByIdMatchId(matchId);
         if (currentPlayers >= ROOM_SIZE || !STATUS_MATCHMAKING.equalsIgnoreCase(session.getStatus())) {
-            return enterBallRoom();
+            return enterBallRoom(new EnterBallRoomRequest(paymentTokenIds));
         }
 
-        ensureSufficientBalance(user, "unirte a la sala");
-        debitBallEntry(user, matchId);
+        ensureSufficientBalance(user, paymentTokenIds, "unirte a la sala");
+        debitBallEntry(user, matchId, paymentTokenIds);
         createParticipant(session, user);
 
         long newCount = matchParticipantRepository.countByIdMatchId(matchId);
@@ -1625,19 +1638,28 @@ public class GameService {
         matchParticipantRepository.save(participant);
     }
 
-    private void ensureSufficientBalance(UserEntity user, String actionDescription) {
-        if (portfolioWalletService.calculatePortfolioValue(user).compareTo(BALL_ENTRY_COST) < 0) {
+    private void ensureSufficientBalance(UserEntity user, List<Integer> paymentTokenIds, String actionDescription) {
+        Set<Integer> includedTokenIds = paymentTokenIds == null ? Set.of() : Set.copyOf(paymentTokenIds);
+        if (portfolioWalletService.calculateSpendableValue(user, includedTokenIds).compareTo(BALL_ENTRY_COST) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente para " + actionDescription);
         }
     }
 
-    private void debitBallEntry(UserEntity user, Integer matchId) {
+    private void debitBallEntry(UserEntity user, Integer matchId, List<Integer> paymentTokenIds) {
         String description = entryTransactionDescription(matchId);
         if (transactionLogRepository.existsByUserUserIdAndTypeAndDescription(user.getUserId(), "BALL_ENTRY", description)) {
             return;
         }
-        portfolioWalletService.debitValue(user, BALL_ENTRY_COST, Set.of(), "entrar en la sala");
+        List<EntryDebit> debits = portfolioWalletService.debitValueFromPreferredTokens(
+            user,
+            BALL_ENTRY_COST,
+            paymentTokenIds,
+            "entrar en la sala"
+        );
         logTransaction(user, "BALL_ENTRY", BALL_ENTRY_COST.negate(), description);
+        if (!debits.isEmpty()) {
+            logInternalTransaction(user, "BALL_ENTRY_TOKENS", BigDecimal.ZERO, entryTokenTransactionDescription(matchId, debits));
+        }
     }
 
     private void refundBallEntry(UserEntity user, Integer matchId) {
@@ -1645,7 +1667,12 @@ public class GameService {
         if (transactionLogRepository.existsByUserUserIdAndTypeAndDescription(user.getUserId(), "BALL_ENTRY_REFUND", description)) {
             return;
         }
-        portfolioWalletService.creditValue(user, BALL_ENTRY_COST, Set.of());
+        Map<Integer, BigDecimal> quantitiesByToken = findEntryTokenQuantities(user, matchId);
+        if (quantitiesByToken.isEmpty()) {
+            portfolioWalletService.creditValue(user, BALL_ENTRY_COST, Set.of());
+        } else {
+            portfolioWalletService.creditQuantities(user, quantitiesByToken);
+        }
         logTransaction(user, "BALL_ENTRY_REFUND", BALL_ENTRY_COST, description);
     }
 
@@ -1655,6 +1682,67 @@ public class GameService {
 
     private String refundTransactionDescription(Integer matchId) {
         return "Devolucion entrada sala #" + matchId;
+    }
+
+    private List<Integer> normalizePaymentTokenIds(EnterBallRoomRequest request) {
+        if (request == null || request.paymentTokenIds() == null) {
+            return List.of();
+        }
+        return request.paymentTokenIds().stream()
+            .filter(tokenId -> tokenId != null && tokenId > 0)
+            .distinct()
+            .toList();
+    }
+
+    private String entryTokenTransactionPrefix(Integer matchId) {
+        return "Entrada tokens sala #" + matchId + ": ";
+    }
+
+    private String entryTokenTransactionDescription(Integer matchId, List<EntryDebit> debits) {
+        StringBuilder builder = new StringBuilder(entryTokenTransactionPrefix(matchId));
+        for (int i = 0; i < debits.size(); i++) {
+            EntryDebit debit = debits.get(i);
+            if (i > 0) {
+                builder.append(';');
+            }
+            builder.append(debit.tokenId()).append('=').append(debit.quantity().setScale(4, RoundingMode.HALF_UP));
+        }
+        return builder.toString();
+    }
+
+    private Map<Integer, BigDecimal> findEntryTokenQuantities(UserEntity user, Integer matchId) {
+        String prefix = entryTokenTransactionPrefix(matchId);
+        return transactionLogRepository.findTopByUserUserIdAndTypeAndDescriptionStartingWithOrderByCreatedAtDesc(
+                user.getUserId(),
+                "BALL_ENTRY_TOKENS",
+                prefix
+            )
+            .map(TransactionLogEntity::getDescription)
+            .map(description -> parseEntryTokenQuantities(description.substring(prefix.length())))
+            .orElse(Map.of());
+    }
+
+    private Map<Integer, BigDecimal> parseEntryTokenQuantities(String serialized) {
+        Map<Integer, BigDecimal> quantities = new HashMap<>();
+        if (serialized == null || serialized.isBlank()) {
+            return quantities;
+        }
+        for (String part : serialized.split(";")) {
+            String[] pieces = part.split("=", 2);
+            if (pieces.length != 2) {
+                continue;
+            }
+            try {
+                Integer tokenId = Integer.valueOf(pieces[0]);
+                BigDecimal quantity = new BigDecimal(pieces[1]);
+                if (quantity.compareTo(BigDecimal.ZERO) > 0) {
+                    quantities.merge(tokenId, quantity, BigDecimal::add);
+                }
+            } catch (NumberFormatException ignored) {
+                // Ignore old malformed internal rows; fallback handled by empty result.
+            }
+        }
+        return quantities;
     }
 
     private boolean isRefundableEntryStatus(String status) {
@@ -1689,7 +1777,22 @@ public class GameService {
         log.setAmountFiat(amount.setScale(2, RoundingMode.HALF_UP));
         log.setDescription(description);
         transactionLogRepository.save(log);
-        automatedEmailService.sendTransactionEmail(user, type, log.getAmountFiat(), description);
+        if (shouldEmailTransaction(type)) {
+            automatedEmailService.sendTransactionEmail(user, type, log.getAmountFiat(), description);
+        }
+    }
+
+    private boolean shouldEmailTransaction(String type) {
+        return !"BALL_ENTRY".equals(type) && !"BALL_ENTRY_REFUND".equals(type);
+    }
+
+    private void logInternalTransaction(UserEntity user, String type, BigDecimal amount, String description) {
+        TransactionLogEntity log = new TransactionLogEntity();
+        log.setUser(user);
+        log.setType(type);
+        log.setAmountFiat(amount.setScale(2, RoundingMode.HALF_UP));
+        log.setDescription(description);
+        transactionLogRepository.save(log);
     }
 
     private void publishMatchChanged(Integer matchId, String event) {

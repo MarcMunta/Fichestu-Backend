@@ -125,6 +125,11 @@ public final class GameDtos {
     ) {
     }
 
+    public record EnterBallRoomRequest(
+        List<Integer> paymentTokenIds
+    ) {
+    }
+
     public record BallRoomDto(
         String phase,
         String statusMessage,

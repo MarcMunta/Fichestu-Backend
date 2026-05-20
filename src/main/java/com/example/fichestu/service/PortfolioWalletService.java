@@ -9,6 +9,10 @@ import com.example.fichestu.persistence.repository.UserWalletRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,6 +21,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class PortfolioWalletService {
+
+    public record EntryDebit(Integer tokenId, BigDecimal quantity, BigDecimal value) {
+    }
 
     public static final BigDecimal INITIAL_PORTFOLIO_VALUE = new BigDecimal("200.00");
     public static final BigDecimal INITIAL_MARKET_TOKEN_QUANTITY = new BigDecimal("10.0000");
@@ -57,9 +64,10 @@ public class PortfolioWalletService {
 
     @Transactional(readOnly = true)
     public BigDecimal calculatePortfolioValue(UserEntity user, Set<Integer> excludedTokenIds) {
+        Set<Integer> excluded = excludedTokenIds == null ? Set.of() : excludedTokenIds;
         return userWalletRepository.findByIdUserId(user.getUserId()).stream()
             .filter(wallet -> wallet.getToken() != null)
-            .filter(wallet -> !excludedTokenIds.contains(wallet.getToken().getTokenId()))
+            .filter(wallet -> !excluded.contains(wallet.getToken().getTokenId()))
             .map(this::holdingValue)
             .reduce(ZERO_MONEY, BigDecimal::add)
             .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
@@ -71,10 +79,10 @@ public class PortfolioWalletService {
     }
 
     @Transactional
-    public void debitGreyValue(UserEntity user, BigDecimal amount, String actionDescription) {
+    public EntryDebit debitGreyValue(UserEntity user, BigDecimal amount, String actionDescription) {
         BigDecimal target = normalizeMoney(amount);
         if (target.compareTo(ZERO_MONEY) <= 0) {
-            return;
+            return null;
         }
 
         TokenEntity greyToken = ensureGreyToken();
@@ -90,6 +98,78 @@ public class PortfolioWalletService {
         BigDecimal quantityToDebit = target.divide(greyToken.getCurrentPrice(), QUANTITY_SCALE, RoundingMode.UP);
         wallet.setQuantity(quantity.subtract(quantityToDebit).max(ZERO_QUANTITY).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
         userWalletRepository.save(wallet);
+        BigDecimal actualDebited = greyToken.getCurrentPrice().multiply(quantityToDebit).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return new EntryDebit(greyToken.getTokenId(), quantityToDebit, actualDebited);
+    }
+
+    @Transactional
+    public List<EntryDebit> debitValueFromPreferredTokens(
+        UserEntity user,
+        BigDecimal amount,
+        List<Integer> preferredTokenIds,
+        String actionDescription
+    ) {
+        List<Integer> preferred = preferredTokenIds == null ? List.of() : preferredTokenIds.stream()
+            .filter(id -> id != null && id > 0)
+            .distinct()
+            .toList();
+        if (preferred.isEmpty()) {
+            EntryDebit debit = debitGreyValue(user, amount, actionDescription);
+            return debit == null ? List.of() : List.of(debit);
+        }
+
+        Comparator<UserWalletEntity> sort = Comparator.comparingInt((UserWalletEntity wallet) -> {
+            int index = preferred.indexOf(wallet.getToken().getTokenId());
+            return index < 0 ? Integer.MAX_VALUE : index;
+        }).thenComparing(wallet -> wallet.getToken().getTokenId());
+
+        List<UserWalletEntity> wallets = spendableWallets(user).stream()
+            .filter(wallet -> preferred.contains(wallet.getToken().getTokenId()))
+            .sorted(sort)
+            .toList();
+        return debitValueFromWallets(amount, actionDescription, wallets);
+    }
+
+    private List<EntryDebit> debitValueFromWallets(
+        BigDecimal amount,
+        String actionDescription,
+        List<UserWalletEntity> wallets
+    ) {
+        BigDecimal target = normalizeMoney(amount);
+        if (target.compareTo(ZERO_MONEY) <= 0) {
+            return List.of();
+        }
+        BigDecimal spendable = wallets.stream()
+            .map(this::holdingValue)
+            .reduce(ZERO_MONEY, BigDecimal::add)
+            .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        if (spendable.compareTo(target) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente para " + actionDescription);
+        }
+
+        BigDecimal remaining = target;
+        List<EntryDebit> debits = new java.util.ArrayList<>();
+        for (UserWalletEntity wallet : wallets) {
+            if (remaining.compareTo(ZERO_MONEY) <= 0) {
+                break;
+            }
+
+            BigDecimal price = wallet.getToken().getCurrentPrice();
+            BigDecimal walletValue = holdingValue(wallet);
+            BigDecimal valueToDebit = remaining.min(walletValue);
+            BigDecimal quantityToDebit = valueToDebit.divide(price, QUANTITY_SCALE, RoundingMode.UP);
+            if (quantityToDebit.compareTo(wallet.getQuantity()) > 0) {
+                quantityToDebit = wallet.getQuantity();
+            }
+
+            wallet.setQuantity(wallet.getQuantity().subtract(quantityToDebit).max(ZERO_QUANTITY).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
+            userWalletRepository.save(wallet);
+
+            BigDecimal actualDebited = price.multiply(quantityToDebit).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            debits.add(new EntryDebit(wallet.getToken().getTokenId(), quantityToDebit, actualDebited));
+            remaining = remaining.subtract(actualDebited).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        }
+        return debits;
     }
 
     @Transactional
@@ -110,6 +190,50 @@ public class PortfolioWalletService {
         BigDecimal current = wallet.getQuantity() == null ? ZERO_QUANTITY : wallet.getQuantity();
         wallet.setQuantity(current.add(quantity).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
         userWalletRepository.save(wallet);
+    }
+
+    @Transactional
+    public void creditQuantities(UserEntity user, Map<Integer, BigDecimal> quantitiesByTokenId) {
+        if (quantitiesByTokenId == null || quantitiesByTokenId.isEmpty()) {
+            return;
+        }
+
+        Map<Integer, BigDecimal> normalized = new LinkedHashMap<>();
+        quantitiesByTokenId.forEach((tokenId, quantity) -> {
+            if (tokenId != null && quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0) {
+                normalized.merge(tokenId, quantity.setScale(QUANTITY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
+            }
+        });
+
+        for (TokenEntity token : tokenRepository.findAllByOrderByTokenIdAsc()) {
+            BigDecimal quantity = normalized.get(token.getTokenId());
+            if (quantity == null || quantity.compareTo(ZERO_QUANTITY) <= 0) {
+                continue;
+            }
+            UserWalletEntity wallet = findOrCreateWallet(user, token);
+            BigDecimal current = wallet.getQuantity() == null ? ZERO_QUANTITY : wallet.getQuantity();
+            wallet.setQuantity(current.add(quantity).setScale(QUANTITY_SCALE, RoundingMode.HALF_UP));
+            userWalletRepository.save(wallet);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal calculateSpendableValue(UserEntity user, Set<Integer> includedTokenIds) {
+        Set<Integer> included = includedTokenIds == null ? Set.of() : includedTokenIds;
+        return userWalletRepository.findByIdUserId(user.getUserId()).stream()
+            .filter(wallet -> wallet.getToken() != null)
+            .filter(wallet -> included.isEmpty() || included.contains(wallet.getToken().getTokenId()))
+            .map(this::holdingValue)
+            .reduce(ZERO_MONEY, BigDecimal::add)
+            .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private List<UserWalletEntity> spendableWallets(UserEntity user) {
+        return userWalletRepository.findByIdUserId(user.getUserId()).stream()
+            .filter(wallet -> wallet.getToken() != null)
+            .filter(wallet -> wallet.getQuantity() != null && wallet.getQuantity().compareTo(ZERO_QUANTITY) > 0)
+            .filter(wallet -> wallet.getToken().getCurrentPrice() != null && wallet.getToken().getCurrentPrice().compareTo(BigDecimal.ZERO) > 0)
+            .toList();
     }
 
     @Transactional
