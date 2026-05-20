@@ -898,10 +898,7 @@ public class GameService {
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
 
         if (!"CLOSED".equalsIgnoreCase(session.getStatus())) {
-            session.setStatus("CLOSED");
-            session.setEndTime(Instant.now());
-            gameSessionRepository.save(session);
-            logEvent(session, "MATCH_CLOSED", "La partida ha sido cerrada.");
+            deleteSessionRow(session);
         }
 
         return new GenericMessageResponse("Match cerrado", true);
@@ -1325,9 +1322,7 @@ public class GameService {
                 if (match == null || STATUS_CLOSED.equalsIgnoreCase(match.getStatus())) {
                     return false;
                 }
-                boolean visibleBattle = "IN_PROGRESS".equalsIgnoreCase(match.getStatus())
-                    || "FINISHED".equalsIgnoreCase(match.getStatus());
-                return visibleBattle || Boolean.TRUE.equals(participant.getAlive());
+                return Boolean.TRUE.equals(participant.getAlive());
             })
             .map(MatchParticipantEntity::getMatch)
             .max(Comparator.comparing(GameSessionEntity::getMatchId));
@@ -1612,9 +1607,29 @@ public class GameService {
         if (matchParticipantRepository.countByIdMatchId(session.getMatchId()) > 0) {
             return;
         }
-        session.setStatus(STATUS_CLOSED);
-        session.setEndTime(Instant.now());
-        gameSessionRepository.save(session);
+        deleteSessionRow(session);
+    }
+
+    private void deleteSessionRow(GameSessionEntity session) {
+        Integer matchId = session.getMatchId();
+        entityManager.flush();
+        entityManager
+            .createNativeQuery("delete from game_session_events where match_id = :matchId")
+            .setParameter("matchId", matchId)
+            .executeUpdate();
+        entityManager
+            .createNativeQuery("delete from match_cards where match_id = :matchId")
+            .setParameter("matchId", matchId)
+            .executeUpdate();
+        entityManager
+            .createNativeQuery("delete from match_participants where match_id = :matchId")
+            .setParameter("matchId", matchId)
+            .executeUpdate();
+        entityManager.detach(session);
+        entityManager
+            .createNativeQuery("delete from game_sessions where match_id = :matchId")
+            .setParameter("matchId", matchId)
+            .executeUpdate();
     }
 
     private void closeIfOnlyBotsRemain(GameSessionEntity session) {
