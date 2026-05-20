@@ -543,6 +543,43 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void lateBallPickKeepsUserChoiceInsteadOfAutoAssigningFirst() throws Exception {
+        createDefaultTokens();
+        List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
+
+        String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
+
+        for (int i = 1; i < 10; i++) {
+            mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
+                    .header("Authorization", bearerFor(users.get(i))))
+                .andExpect(status().isOk());
+        }
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setMatchmakingDeadline(Instant.now().minusSeconds(1));
+        gameSessionRepository.save(session);
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/pick-ball", matchId)
+                .header("Authorization", bearerFor(users.get(0)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("ballId", 11))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.balls[10].pickedBy").value(String.valueOf(users.get(0).getUserId())));
+
+        MatchParticipantEntity participant = matchParticipantRepository.findByIdMatchId(matchId).stream()
+            .filter(value -> value.getUser().getUserId().equals(users.get(0).getUserId()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(participant.getSelectedBallNumber()).isEqualTo(11);
+    }
+
+    @Test
     void battleClosesWhenOnlyBotsRemainAlive() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));

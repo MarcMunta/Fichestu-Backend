@@ -542,10 +542,12 @@ public class GameService {
         UserEntity user = currentUserService.requireUserEntity();
         GameSessionEntity session = loadSessionOwnedByUser(matchId, user.getUserId());
         resolveMatchmakingIfReady(session);
-        resolveBallSelectionIfReady(session);
 
         if (!STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La sala no esta en fase de seleccion");
+        }
+        if (ballId == null || ballId < 1 || ballId > BALL_COUNT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bola invalida");
         }
 
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
@@ -588,6 +590,8 @@ public class GameService {
             logEvent(session, "READY_REVEAL", "Todas las bolas han sido elegidas. Ya se pueden revelar multiplicadores.");
         }
         publishMatchChanged(session.getMatchId(), "BALL_PICKED");
+
+        resolveBallSelectionIfReady(session);
 
         return buildMatchStateResponse(session, user.getUserId(), "Bola seleccionada", null);
     }
