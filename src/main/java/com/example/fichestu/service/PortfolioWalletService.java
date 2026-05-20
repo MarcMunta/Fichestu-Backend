@@ -114,11 +114,8 @@ public class PortfolioWalletService {
             .distinct()
             .toList();
         if (preferred.isEmpty()) {
-            List<UserWalletEntity> wallets = spendableWallets(user).stream()
-                .sorted(Comparator.comparing((UserWalletEntity wallet) -> wallet.getToken().getCurrentPrice())
-                    .thenComparing(wallet -> wallet.getToken().getTokenId()))
-                .toList();
-            return debitValueFromWallets(amount, actionDescription, wallets);
+            EntryDebit debit = debitGreyValue(user, amount, actionDescription);
+            return debit == null ? List.of() : List.of(debit);
         }
 
         Comparator<UserWalletEntity> sort = Comparator.comparingInt((UserWalletEntity wallet) -> {

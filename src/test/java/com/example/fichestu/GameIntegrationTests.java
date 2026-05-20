@@ -237,7 +237,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
-    void enterBallRoomWithoutPaymentPreferenceUsesAvailablePortfolioTokens() throws Exception {
+    void enterBallRoomWithoutStumDoesNotSpendPortfolioTokens() throws Exception {
         createDefaultTokens();
         UserEntity user = createUser("nogrey", "nogrey@test.com", "secret123", "USER", new BigDecimal("100.00"));
         UserWalletEntity greyWallet = walletFor(user, "Ficha Gris");
@@ -249,11 +249,11 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 .header("Authorization", bearerFor(user))
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsString(Map.of("paymentTokenIds", List.of()))))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.success").value(true));
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Saldo insuficiente para entrar en la sala"));
 
         assertThat(walletFor(user, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("0.0000"));
-        assertThat(walletFor(user, "Ficha Verde").getQuantity()).isLessThan(greenBefore);
+        assertThat(walletFor(user, "Ficha Verde").getQuantity()).isEqualByComparingTo(greenBefore);
     }
 
     @Test

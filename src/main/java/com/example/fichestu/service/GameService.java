@@ -1730,8 +1730,7 @@ public class GameService {
     }
 
     private void ensureSufficientBalance(UserEntity user, List<Integer> paymentTokenIds, String actionDescription) {
-        Set<Integer> includedTokenIds = paymentTokenIds == null ? Set.of() : Set.copyOf(paymentTokenIds);
-        if (portfolioWalletService.calculateSpendableValue(user, includedTokenIds).compareTo(BALL_ENTRY_COST) < 0) {
+        if (calculateFtcBalance(user).compareTo(BALL_ENTRY_COST) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente para " + actionDescription);
         }
     }
