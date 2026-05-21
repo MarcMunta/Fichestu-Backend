@@ -6,6 +6,7 @@ import com.example.fichestu.api.ProfileDtos.GenericResponse;
 import com.example.fichestu.api.ProfileDtos.ProfileResponse;
 import com.example.fichestu.api.ProfileDtos.StatsResponse;
 import com.example.fichestu.api.ProfileDtos.UpdateProfileRequest;
+import com.example.fichestu.api.ProfileDtos.UpdateProfileStyleRequest;
 import com.example.fichestu.api.ProfileDtos.UpdateLanguageRequest;
 import com.example.fichestu.service.ProfileService;
 import jakarta.validation.Valid;
@@ -56,9 +57,24 @@ public class ProfileController {
         return profileService.uploadAvatar(avatar);
     }
 
+    @PutMapping("/style")
+    public ProfileResponse updateStyle(@Valid @RequestBody UpdateProfileStyleRequest request) {
+        return profileService.updateStyle(request);
+    }
+
+    @PostMapping("/background")
+    public ProfileResponse uploadBackground(@RequestPart("background") MultipartFile background) {
+        return profileService.uploadBackground(background);
+    }
+
     @GetMapping("/avatar/{fileName}")
     public ResponseEntity<Resource> getAvatar(@PathVariable String fileName) {
         return profileService.getAvatar(fileName);
+    }
+
+    @GetMapping("/background/{fileName}")
+    public ResponseEntity<Resource> getBackground(@PathVariable String fileName) {
+        return profileService.getBackground(fileName);
     }
 
     @PostMapping("/change-password")

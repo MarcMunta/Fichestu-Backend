@@ -31,6 +31,12 @@ public class UserEntity {
     @Column(name = "profile_pic_url", columnDefinition = "TEXT")
     private String profilePicUrl;
 
+    @Column(name = "profile_card_background", length = 80)
+    private String profileCardBackground;
+
+    @Column(name = "profile_page_background", columnDefinition = "TEXT")
+    private String profilePageBackground;
+
     @Column(name = "fiat_balance", nullable = false, precision = 15, scale = 2)
     private BigDecimal fiatBalance = BigDecimal.ZERO;
 
@@ -97,6 +103,22 @@ public class UserEntity {
 
     public void setProfilePicUrl(String profilePicUrl) {
         this.profilePicUrl = profilePicUrl;
+    }
+
+    public String getProfileCardBackground() {
+        return profileCardBackground;
+    }
+
+    public void setProfileCardBackground(String profileCardBackground) {
+        this.profileCardBackground = profileCardBackground;
+    }
+
+    public String getProfilePageBackground() {
+        return profilePageBackground;
+    }
+
+    public void setProfilePageBackground(String profilePageBackground) {
+        this.profilePageBackground = profilePageBackground;
     }
 
     public BigDecimal getFiatBalance() {

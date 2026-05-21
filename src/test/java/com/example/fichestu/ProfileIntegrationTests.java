@@ -3,6 +3,7 @@ package com.example.fichestu;
 import com.example.fichestu.persistence.entity.GameSessionEntity;
 import com.example.fichestu.persistence.entity.MatchParticipantEntity;
 import com.example.fichestu.persistence.entity.MatchParticipantId;
+import com.example.fichestu.persistence.entity.TransactionLogEntity;
 import java.math.BigDecimal;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,8 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
     void authenticatedProfileFetchWorks() throws Exception {
         var user = createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
         user.setProfilePicUrl("https://example.com/avatar.png");
+        user.setProfileCardBackground("hero:casino");
+        user.setProfilePageBackground("screen:default");
         userRepository.save(user);
 
         mockMvc.perform(get("/api/profile")
@@ -28,7 +31,9 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.username").value("alice"))
             .andExpect(jsonPath("$.email").value("alice@test.com"))
             .andExpect(jsonPath("$.profilePicUrl").value("https://example.com/avatar.png"))
-            .andExpect(jsonPath("$.hasPassword").value(true));
+            .andExpect(jsonPath("$.hasPassword").value(true))
+            .andExpect(jsonPath("$.profileCardBackground").value("hero:casino"))
+            .andExpect(jsonPath("$.profilePageBackground").value("screen:default"));
     }
 
     @Test
@@ -84,6 +89,28 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.username").value("alice-renamed"))
             .andExpect(jsonPath("$.email").value("alice-renamed@test.com"))
             .andExpect(jsonPath("$.profilePicUrl").value("https://example.com/new.png"));
+    }
+
+    @Test
+    void profileStylePersistsCardAndPageBackgrounds() throws Exception {
+        var user = createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        mockMvc.perform(put("/api/profile/style")
+                .header("Authorization", bearerFor(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "profileCardBackground", "hero:mystic-purple",
+                    "profilePageBackground", "screen:ocean"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.profileCardBackground").value("hero:mystic-purple"))
+            .andExpect(jsonPath("$.profilePageBackground").value("screen:ocean"));
+
+        mockMvc.perform(get("/api/profile")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.profileCardBackground").value("hero:mystic-purple"))
+            .andExpect(jsonPath("$.profilePageBackground").value("screen:ocean"));
     }
 
     @Test
@@ -155,5 +182,61 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.badges[0].unlocked").value(true))
             .andExpect(jsonPath("$.badges[1].title").value("Sangre Fria"))
             .andExpect(jsonPath("$.badges[1].unlocked").value(true));
+    }
+
+    @Test
+    void statsAndBadgesAreDerivedFromBackendProgress() throws Exception {
+        var user = createUser("profile-stats", "profile-stats@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        var rival = createUser("rival", "rival@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        GameSessionEntity wonSession = new GameSessionEntity();
+        wonSession.setStatus("FINISHED");
+        wonSession.setWinner(user);
+        wonSession = gameSessionRepository.save(wonSession);
+        MatchParticipantEntity wonParticipation = new MatchParticipantEntity();
+        wonParticipation.setId(new MatchParticipantId(wonSession.getMatchId(), user.getUserId()));
+        wonParticipation.setMatch(wonSession);
+        wonParticipation.setUser(user);
+        wonParticipation.setCurrentHp(25);
+        wonParticipation.setAlive(true);
+        wonParticipation.setMultiplierWon(new BigDecimal("4.00"));
+        matchParticipantRepository.save(wonParticipation);
+
+        GameSessionEntity lostSession = new GameSessionEntity();
+        lostSession.setStatus("CLOSED");
+        lostSession.setWinner(rival);
+        lostSession = gameSessionRepository.save(lostSession);
+        MatchParticipantEntity lostParticipation = new MatchParticipantEntity();
+        lostParticipation.setId(new MatchParticipantId(lostSession.getMatchId(), user.getUserId()));
+        lostParticipation.setMatch(lostSession);
+        lostParticipation.setUser(user);
+        lostParticipation.setCurrentHp(0);
+        lostParticipation.setAlive(false);
+        lostParticipation.setMultiplierWon(new BigDecimal("2.00"));
+        matchParticipantRepository.save(lostParticipation);
+
+        TransactionLogEntity reward = new TransactionLogEntity();
+        reward.setUser(user);
+        reward.setType("REWARDED");
+        reward.setAmountFiat(new BigDecimal("25.00"));
+        reward.setDescription("Test rewarded");
+        transactionLogRepository.save(reward);
+
+        mockMvc.perform(get("/api/profile/stats")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.stats.ballRoomsPlayed").value(2))
+            .andExpect(jsonPath("$.stats.battlesPlayed").value(2))
+            .andExpect(jsonPath("$.stats.battlesWon").value(1))
+            .andExpect(jsonPath("$.stats.bestMultiplier").value(4.0))
+            .andExpect(jsonPath("$.stats.averageMultiplier").value(3.0))
+            .andExpect(jsonPath("$.stats.rewardedAdsClaimed").value(1));
+
+        mockMvc.perform(get("/api/profile/badges")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.badges[0].unlocked").value(true))
+            .andExpect(jsonPath("$.badges[1].unlocked").value(true))
+            .andExpect(jsonPath("$.badges[2].unlocked").value(false));
     }
 }

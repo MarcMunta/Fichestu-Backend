@@ -21,7 +21,9 @@ public final class ProfileDtos {
         String role,
         String profilePicUrl,
         Boolean hasPassword,
-        String preferredLanguage
+        String preferredLanguage,
+        String profileCardBackground,
+        String profilePageBackground
     ) {
     }
 
@@ -58,6 +60,30 @@ public final class ProfileDtos {
 
         public void setProfilePicUrl(String profilePicUrl) {
             this.profilePicUrl = profilePicUrl;
+        }
+    }
+
+    public static class UpdateProfileStyleRequest {
+        @Size(max = 80)
+        private String profileCardBackground;
+
+        @Size(max = 512)
+        private String profilePageBackground;
+
+        public String getProfileCardBackground() {
+            return profileCardBackground;
+        }
+
+        public void setProfileCardBackground(String profileCardBackground) {
+            this.profileCardBackground = profileCardBackground;
+        }
+
+        public String getProfilePageBackground() {
+            return profilePageBackground;
+        }
+
+        public void setProfilePageBackground(String profilePageBackground) {
+            this.profilePageBackground = profilePageBackground;
         }
     }
 

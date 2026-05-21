@@ -6,6 +6,7 @@ import com.example.fichestu.api.ProfileDtos.GenericResponse;
 import com.example.fichestu.api.ProfileDtos.ProfileResponse;
 import com.example.fichestu.api.ProfileDtos.StatsResponse;
 import com.example.fichestu.api.ProfileDtos.UpdateProfileRequest;
+import com.example.fichestu.api.ProfileDtos.UpdateProfileStyleRequest;
 import com.example.fichestu.api.ProfileDtos.UpdateLanguageRequest;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.repository.UserRepository;
@@ -33,6 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class ProfileService {
 
     private static final Path AVATAR_UPLOAD_DIR = Path.of("uploads", "profile-pictures");
+    private static final Path BACKGROUND_UPLOAD_DIR = Path.of("uploads", "profile-backgrounds");
     private static final Set<String> ALLOWED_AVATAR_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     private final UserRepository userRepository;
@@ -123,13 +125,66 @@ public class ProfileService {
         return toProfileResponse(user, "Foto de perfil actualizada");
     }
 
+    @Transactional
+    public ProfileResponse updateStyle(UpdateProfileStyleRequest request) {
+        UserEntity user = currentUserService.requireUserEntity();
+        user.setProfileCardBackground(normalizeCardBackground(request.getProfileCardBackground()));
+        user.setProfilePageBackground(normalizePageBackground(request.getProfilePageBackground()));
+        userRepository.save(user);
+        return toProfileResponse(user, "Perfil actualizado");
+    }
+
+    @Transactional
+    public ProfileResponse uploadBackground(MultipartFile background) {
+        UserEntity user = currentUserService.requireUserEntity();
+
+        if (background == null || background.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La imagen es obligatoria");
+        }
+
+        String contentType = background.getContentType() == null
+            ? ""
+            : background.getContentType().toLowerCase(Locale.ROOT);
+        if (!ALLOWED_AVATAR_TYPES.contains(contentType)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Formato de imagen no permitido");
+        }
+
+        String extension = switch (contentType) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> ".jpg";
+        };
+        String fileName = "user-" + user.getUserId() + "-" + UUID.randomUUID() + extension;
+
+        try {
+            Files.createDirectories(BACKGROUND_UPLOAD_DIR);
+            Path target = BACKGROUND_UPLOAD_DIR.resolve(fileName).normalize();
+            Files.copy(background.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "No se pudo guardar la imagen");
+        }
+
+        user.setProfilePageBackground("/api/profile/background/" + fileName);
+        userRepository.save(user);
+
+        return toProfileResponse(user, "Perfil actualizado");
+    }
+
     public ResponseEntity<Resource> getAvatar(String fileName) {
+        return getUploadedImage(AVATAR_UPLOAD_DIR, fileName);
+    }
+
+    public ResponseEntity<Resource> getBackground(String fileName) {
+        return getUploadedImage(BACKGROUND_UPLOAD_DIR, fileName);
+    }
+
+    private ResponseEntity<Resource> getUploadedImage(Path uploadDir, String fileName) {
         if (fileName == null || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre de imagen invalido");
         }
 
         try {
-            Path file = AVATAR_UPLOAD_DIR.resolve(fileName).normalize();
+            Path file = uploadDir.resolve(fileName).normalize();
             Resource resource = new UrlResource(file.toUri());
             if (!resource.exists() || !resource.isReadable()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Imagen no encontrada");
@@ -231,6 +286,29 @@ public class ProfileService {
         }
     }
 
+    private String normalizeCardBackground(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        String trimmed = rawValue.trim().toLowerCase(Locale.ROOT);
+        if (!trimmed.matches("hero:[a-z0-9-]{1,40}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fondo de tarjeta no valido");
+        }
+        return trimmed;
+    }
+
+    private String normalizePageBackground(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        String trimmed = rawValue.trim().toLowerCase(Locale.ROOT);
+        if (trimmed.matches("screen:[a-z0-9-]{1,40}") ||
+            trimmed.matches("image:/api/profile/background/[a-z0-9\\-]+\\.(jpg|png|webp)")) {
+            return trimmed;
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fondo de perfil no valido");
+    }
+
     private ProfileResponse toProfileResponse(UserEntity user, String message) {
         boolean hasPassword = user.getPasswordHash() != null && !user.getPasswordHash().isBlank();
         return new ProfileResponse(
@@ -241,7 +319,9 @@ public class ProfileService {
             user.getRole(),
             user.getProfilePicUrl(),
             hasPassword,
-            normalizeLanguage(user.getPreferredLanguage())
+            normalizeLanguage(user.getPreferredLanguage()),
+            user.getProfileCardBackground(),
+            user.getProfilePageBackground()
         );
     }
 
