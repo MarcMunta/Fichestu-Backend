@@ -46,6 +46,7 @@ public class AuthService {
     private final PasswordResetMailService passwordResetMailService;
     private final AutomatedEmailService automatedEmailService;
     private final PortfolioWalletService portfolioWalletService;
+    private final GameService gameService;
     private final SecureRandom secureRandom = new SecureRandom();
     private final String googleClientIdWeb = "376595931736-ts5451g69bk8rd6re82o6ln1p28m4i2l.apps.googleusercontent.com";
     private final String googleClientIdAndroid = "376595931736-6oski1i5s8h2dlepv04hhf3upq49jp51.apps.googleusercontent.com";
@@ -63,7 +64,8 @@ public class AuthService {
         CurrentUserService currentUserService,
         PasswordResetMailService passwordResetMailService,
         AutomatedEmailService automatedEmailService,
-        PortfolioWalletService portfolioWalletService
+        PortfolioWalletService portfolioWalletService,
+        GameService gameService
     ) {
         this.userRepository = userRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -74,6 +76,7 @@ public class AuthService {
         this.passwordResetMailService = passwordResetMailService;
         this.automatedEmailService = automatedEmailService;
         this.portfolioWalletService = portfolioWalletService;
+        this.gameService = gameService;
     }
 
     @Transactional
@@ -176,6 +179,7 @@ public class AuthService {
     @Transactional
     public GenericResponse logout(String authorization) {
         String token = extractBearerToken(authorization);
+        gameService.detachCurrentUserFromActiveMatchesWithoutRefund();
         jwtTokenRevocationService.revoke(token, "LOGOUT");
         return new GenericResponse("Sesion cerrada", true);
     }

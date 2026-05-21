@@ -237,7 +237,27 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
-    void leavingMatchmakingThroughAbandonRefundsEntry() throws Exception {
+    void enterBallRoomWithoutStumDoesNotSpendPortfolioTokens() throws Exception {
+        createDefaultTokens();
+        UserEntity user = createUser("nogrey", "nogrey@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        UserWalletEntity greyWallet = walletFor(user, "Ficha Gris");
+        greyWallet.setQuantity(new BigDecimal("0.0000"));
+        userWalletRepository.save(greyWallet);
+        BigDecimal greenBefore = walletFor(user, "Ficha Verde").getQuantity();
+
+        mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(user))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("paymentTokenIds", List.of()))))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Saldo insuficiente para entrar en la sala"));
+
+        assertThat(walletFor(user, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("0.0000"));
+        assertThat(walletFor(user, "Ficha Verde").getQuantity()).isEqualByComparingTo(greenBefore);
+    }
+
+    @Test
+    void leavingMatchmakingThroughAbandonDoesNotRefundEntry() throws Exception {
         createDefaultTokens();
         UserEntity user = createUser("leaver", "leaver@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
@@ -253,10 +273,60 @@ class GameIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(post("/api/game/matches/{matchId}/abandon", matchId)
             .header("Authorization", bearerFor(user)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00));
+            .andExpect(jsonPath("$.cashBalance").value(90.00));
 
-        UserEntity refreshed = userRepository.findById(user.getUserId()).orElseThrow();
-        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(walletFor(user, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("90.0000"));
+        assertThat(matchParticipantRepository.existsByIdMatchIdAndIdUserId(matchId, user.getUserId())).isFalse();
+        assertThat(gameSessionRepository.findById(matchId)).isEmpty();
+    }
+
+    @Test
+    void logoutDetachesUserFromActiveMatchWithoutRefund() throws Exception {
+        createDefaultTokens();
+        UserEntity user = createUser("logoutmatch", "logoutmatch@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        String bearer = bearerFor(user);
+
+        String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
+
+        mockMvc.perform(post("/api/auth/logout")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk());
+
+        assertThat(walletFor(user, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("90.0000"));
+        assertThat(matchParticipantRepository.existsByIdMatchIdAndIdUserId(matchId, user.getUserId())).isFalse();
+        assertThat(gameSessionRepository.findById(matchId)).isEmpty();
+    }
+
+    @Test
+    void bootstrapAfterAppRestartDetachesStaleActiveMatchWithoutRefund() throws Exception {
+        createDefaultTokens();
+        UserEntity user = createUser("restartmatch", "restartmatch@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        String bearer = bearerFor(user);
+
+        String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
+
+        mockMvc.perform(get("/api/game/bootstrap")
+                .header("Authorization", bearer))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cashBalance").value(90.00));
+
+        assertThat(walletFor(user, "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("90.0000"));
+        assertThat(matchParticipantRepository.existsByIdMatchIdAndIdUserId(matchId, user.getUserId())).isFalse();
+        assertThat(gameSessionRepository.findById(matchId)).isEmpty();
     }
 
     @Test
@@ -373,7 +443,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
-    void leavingBeforeBattleStartsRefundsEntry() throws Exception {
+    void leavingBeforeBattleStartsDoesNotRefundEntry() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
 
@@ -394,10 +464,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
         mockMvc.perform(post("/api/game/matches/{matchId}/abandon", matchId)
             .header("Authorization", bearerFor(users.get(0))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.cashBalance").value(100.00));
+            .andExpect(jsonPath("$.cashBalance").value(90.00));
 
-        UserEntity refreshed = userRepository.findById(users.get(0).getUserId()).orElseThrow();
-        assertThat(refreshed.getFiatBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(walletFor(users.get(0), "Ficha Gris").getQuantity()).isEqualByComparingTo(new BigDecimal("90.0000"));
         assertThat(matchParticipantRepository.existsByIdMatchIdAndIdUserId(matchId, users.get(0).getUserId())).isFalse();
         assertThat(matchParticipantRepository.countByIdMatchId(matchId)).isEqualTo(10);
     }
