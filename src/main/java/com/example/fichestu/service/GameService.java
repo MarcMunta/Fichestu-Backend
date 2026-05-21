@@ -491,16 +491,14 @@ public class GameService {
         Optional<GameSessionEntity> sessionOptional = findCurrentOrVisibleBattleSession(user.getUserId());
 
         if (sessionOptional.isEmpty()) {
-            return new MatchStateResponse(
-                "No hay match activo",
-                true,
-                null,
-                new BallRoomDto("WAITING_ENTRY", "Crea o unete a una sala para empezar.", false, null, List.of(), List.of()),
-                new BattleDto("LOCKED", 0, null, null, null, "ATTACK", true, List.of("Todavia no hay partida activa."), List.of())
-            );
+            return noActiveMatchStateResponse();
         }
 
-        GameSessionEntity session = sessionOptional.get();
+        GameSessionEntity session = gameSessionRepository.findByMatchIdForUpdate(sessionOptional.get().getMatchId())
+            .orElse(null);
+        if (session == null) {
+            return noActiveMatchStateResponse();
+        }
         resolveMatchmakingIfReady(session);
         if (resolveBallSelectionIfReady(session)) {
             publishMatchChanged(session.getMatchId(), "BALL_SELECTION_READY");
@@ -509,6 +507,16 @@ public class GameService {
             publishMatchChanged(session.getMatchId(), "BATTLE_ROUND_RESOLVED");
         }
         return buildMatchStateResponse(session, user.getUserId(), "Estado del match cargado", null);
+    }
+
+    private MatchStateResponse noActiveMatchStateResponse() {
+        return new MatchStateResponse(
+            "No hay match activo",
+            true,
+            null,
+            new BallRoomDto("WAITING_ENTRY", "Crea o unete a una sala para empezar.", false, null, List.of(), List.of()),
+            new BattleDto("LOCKED", 0, null, null, null, "ATTACK", true, List.of("Todavia no hay partida activa."), List.of())
+        );
     }
 
     @Scheduled(fixedDelay = 1000)
@@ -1125,7 +1133,8 @@ public class GameService {
 
     private BattleDto buildBattleDto(GameSessionEntity session, Integer userId, String selectedAction) {
         String phase;
-        if ("IN_PROGRESS".equalsIgnoreCase(session.getStatus())) {
+        boolean inProgress = "IN_PROGRESS".equalsIgnoreCase(session.getStatus());
+        if (inProgress) {
             phase = "IN_PROGRESS";
         } else if ("FINISHED".equalsIgnoreCase(session.getStatus()) || "CLOSED".equalsIgnoreCase(session.getStatus())) {
             phase = "FINISHED";
@@ -1155,6 +1164,12 @@ public class GameService {
         }
 
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        boolean userDefeated = participants.stream()
+            .filter(participant -> participant.getUser().getUserId().equals(userId))
+            .anyMatch(participant -> !Boolean.TRUE.equals(participant.getAlive()));
+        if (inProgress && userDefeated) {
+            phase = "DEFEATED";
+        }
 
         List<BattlePlayerDto> players = participants.stream()
             .map(participant -> new BattlePlayerDto(
@@ -1365,7 +1380,11 @@ public class GameService {
                 if (match == null || STATUS_CLOSED.equalsIgnoreCase(match.getStatus())) {
                     return false;
                 }
-                return Boolean.TRUE.equals(participant.getAlive());
+                if (Boolean.TRUE.equals(participant.getAlive())) {
+                    return true;
+                }
+                return "IN_PROGRESS".equalsIgnoreCase(match.getStatus())
+                    || "FINISHED".equalsIgnoreCase(match.getStatus());
             })
             .map(MatchParticipantEntity::getMatch)
             .max(Comparator.comparing(GameSessionEntity::getMatchId));

@@ -516,6 +516,73 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void eliminatedPlayerCanStillSeeDefeatStateAndLastRoundLog() throws Exception {
+        createDefaultTokens();
+        List<UserEntity> users = createPlayers(3, new BigDecimal("100.00"));
+
+        String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
+
+        for (int i = 1; i < 3; i++) {
+            mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
+                    .header("Authorization", bearerFor(users.get(i))))
+                .andExpect(status().isOk());
+        }
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setStatus("IN_PROGRESS");
+        session.setBattleRoundDeadline(Instant.now().plusSeconds(30));
+        gameSessionRepository.save(session);
+
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        for (MatchParticipantEntity participant : participants) {
+            participant.setAlive(true);
+            participant.setCurrentHp(participant.getUser().getUserId().equals(users.get(0).getUserId()) ? 1 : 50);
+            participant.setMultiplierWon(new BigDecimal("1.00"));
+        }
+        matchParticipantRepository.saveAll(participants);
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/battle/round", matchId)
+                .header("Authorization", bearerFor(users.get(0)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "action", "ATTACK",
+                    "cardPower", 1,
+                    "targetUserId", users.get(1).getUserId()
+                ))))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/battle/round", matchId)
+                .header("Authorization", bearerFor(users.get(1)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "action", "ATTACK",
+                    "cardPower", 3,
+                    "targetUserId", users.get(0).getUserId()
+                ))))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/battle/round", matchId)
+                .header("Authorization", bearerFor(users.get(2)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("action", "SHIELD", "cardPower", 1))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.battle.phase").value("IN_PROGRESS"));
+
+        mockMvc.perform(get("/api/game/match/state")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.battle.phase").value("DEFEATED"))
+            .andExpect(jsonPath("$.battle.log[?(@ == 'Ronda 01')]").exists())
+            .andExpect(jsonPath("$.battle.log[?(@ == 'player1 ha sido derrotado.')]").exists());
+    }
+
+    @Test
     void duplicateBallSelectionIsRejectedAndHappyPathReachesMarketImpactExactlyOnce() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
