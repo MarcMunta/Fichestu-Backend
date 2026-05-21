@@ -2,6 +2,7 @@ package com.example.fichestu;
 
 import com.example.fichestu.persistence.entity.GameSessionEntity;
 import com.example.fichestu.persistence.entity.MatchParticipantEntity;
+import com.example.fichestu.persistence.entity.TokenEntity;
 import com.example.fichestu.persistence.entity.TokenPriceHistoryEntity;
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.persistence.entity.UserWalletEntity;
@@ -676,6 +677,59 @@ class GameIntegrationTests extends IntegrationTestSupport {
                 .content(objectMapper.writeValueAsString(Map.of("token", "FRO"))))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.message").value("El impacto ya fue aplicado"));
+    }
+
+    @Test
+    void battleWinnerImpactAcceptsLegacyGoldTokenName() throws Exception {
+        createDefaultTokens();
+        TokenEntity purpleToken = findTokenByName("Ficha Morada");
+        purpleToken.setName("Ficha Dorada");
+        tokenRepository.save(purpleToken);
+
+        List<UserEntity> users = createPlayers(2, new BigDecimal("100.00"));
+
+        String createBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(createBody).get("matchId").asInt();
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/join", matchId)
+                .header("Authorization", bearerFor(users.get(1))))
+            .andExpect(status().isOk());
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setStatus("IN_PROGRESS");
+        session.setBattleRoundDeadline(Instant.now().plusSeconds(30));
+        gameSessionRepository.save(session);
+
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        for (MatchParticipantEntity participant : participants) {
+            boolean winner = participant.getUser().getUserId().equals(users.get(0).getUserId());
+            participant.setAlive(winner);
+            participant.setCurrentHp(winner ? 50 : 0);
+            participant.setMultiplierWon(new BigDecimal("2.00"));
+        }
+        matchParticipantRepository.saveAll(participants);
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/battle/round", matchId)
+                .header("Authorization", bearerFor(users.get(0)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "action", "ATTACK",
+                    "cardPower", 2,
+                    "selectedToken", "DORADA"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.battle.phase").value("FINISHED"))
+            .andExpect(jsonPath("$.battle.winnerId").value(String.valueOf(users.get(0).getUserId())));
+
+        GameSessionEntity finishedSession = gameSessionRepository.findById(matchId).orElseThrow();
+        assertThat(finishedSession.getImpactApplied()).isTrue();
+        assertThat(finishedSession.getWinnerTokenAlias()).isEqualTo("DORADA");
+        assertThat(findTokenByName("Ficha Dorada").getCurrentPrice()).isEqualByComparingTo(new BigDecimal("200.00"));
     }
 
     @Test

@@ -1989,15 +1989,18 @@ public class GameService {
 
     private TokenEntity resolveToken(String tokenAlias) {
         String normalized = tokenAlias == null ? "" : tokenAlias.trim().toUpperCase(Locale.ROOT);
-        String tokenName = switch (normalized) {
-            case "ROJA", "FRO", "FICHA ROJA" -> "Ficha Roja";
-            case "AZUL", "FAZ", "FICHA AZUL" -> "Ficha Azul";
-            case "VERDE", "FVD", "FICHA VERDE" -> "Ficha Verde";
-            case "MORADA", "FMO", "FICHA MORADA", "DORADA", "FGD", "FICHA DORADA" -> "Ficha Morada";
-            case "GRIS", "FGR", "STUM", "INCOLORA", "FICHA GRIS", "FICHA INCOLORA" -> PortfolioWalletService.GREY_TOKEN_NAME;
+        List<String> tokenNames = switch (normalized) {
+            case "ROJA", "FRO", "FICHA ROJA" -> List.of("Ficha Roja");
+            case "AZUL", "FAZ", "FICHA AZUL" -> List.of("Ficha Azul");
+            case "VERDE", "FVD", "FICHA VERDE" -> List.of("Ficha Verde");
+            case "MORADA", "FMO", "FICHA MORADA", "DORADA", "FGD", "FICHA DORADA" -> List.of("Ficha Morada", "Ficha Dorada");
+            case "GRIS", "FGR", "STUM", "INCOLORA", "FICHA GRIS", "FICHA INCOLORA" -> List.of(PortfolioWalletService.GREY_TOKEN_NAME);
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token no valido: " + tokenAlias);
         };
-        return tokenRepository.findByNameIgnoreCase(tokenName)
+        return tokenNames.stream()
+            .map(tokenRepository::findByNameIgnoreCase)
+            .flatMap(Optional::stream)
+            .findFirst()
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Token no encontrado"));
     }
 
