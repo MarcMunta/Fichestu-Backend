@@ -1896,7 +1896,7 @@ public class GameService {
             case "ROJA", "FRO", "FICHA ROJA" -> "Ficha Roja";
             case "AZUL", "FAZ", "FICHA AZUL" -> "Ficha Azul";
             case "VERDE", "FVD", "FICHA VERDE" -> "Ficha Verde";
-            case "DORADA", "FGD", "FICHA DORADA" -> "Ficha Dorada";
+            case "MORADA", "FMO", "FICHA MORADA", "DORADA", "FGD", "FICHA DORADA" -> "Ficha Morada";
             case "GRIS", "FGR", "STUM", "INCOLORA", "FICHA GRIS", "FICHA INCOLORA" -> PortfolioWalletService.GREY_TOKEN_NAME;
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token no valido: " + tokenAlias);
         };
@@ -1987,7 +1987,7 @@ public class GameService {
             case "FICHA ROJA" -> new TokenMeta("FRO", colorCode == null ? "#FF0000" : colorCode);
             case "FICHA AZUL" -> new TokenMeta("FAZ", colorCode == null ? "#0000FF" : colorCode);
             case "FICHA VERDE" -> new TokenMeta("FVD", colorCode == null ? "#00FF00" : colorCode);
-            case "FICHA DORADA" -> new TokenMeta("FGD", colorCode == null ? "#FFD700" : colorCode);
+            case "FICHA MORADA", "FICHA DORADA" -> new TokenMeta("FMO", colorCode == null ? "#8B5CF6" : colorCode);
             case "FICHA GRIS", "FICHA INCOLORA", "STUM" -> new TokenMeta("STUM", colorCode == null ? PortfolioWalletService.GREY_TOKEN_COLOR : colorCode);
             default -> {
                 String ticker = tokenName == null ? "TOK" : tokenName.replace("Ficha", "").trim().toUpperCase(Locale.ROOT);

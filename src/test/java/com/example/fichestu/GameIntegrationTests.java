@@ -177,7 +177,7 @@ class GameIntegrationTests extends IntegrationTestSupport {
         assertThat(refreshedUser.getFiatBalance()).isEqualByComparingTo(balanceBeforeReset);
         assertThat(findTokenByName("Ficha Roja").getCurrentPrice()).isNotEqualByComparingTo(priceBeforeTick);
         assertThat(findTokenByName("Ficha Gris").getCurrentPrice()).isEqualByComparingTo(new BigDecimal("1.00"));
-        assertThat(tokenPriceHistoryRepository.countByTokenTokenId(findTokenByName("Ficha Roja").getTokenId())).isGreaterThan(1);
+        assertThat(tokenPriceHistoryRepository.countByTokenTokenId(findTokenByName("Ficha Roja").getTokenId())).isEqualTo(1);
         assertThat(walletFor(user, "Ficha Verde").getQuantity())
             .isGreaterThan(BigDecimal.ZERO);
     }

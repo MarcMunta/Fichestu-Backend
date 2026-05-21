@@ -8,4 +8,6 @@ public interface TokenPriceHistoryRepository extends JpaRepository<TokenPriceHis
     List<TokenPriceHistoryEntity> findTop28ByTokenTokenIdOrderByRecordedAtDesc(Integer tokenId);
 
     long countByTokenTokenId(Integer tokenId);
+
+    void deleteByTokenTokenId(Integer tokenId);
 }

@@ -97,13 +97,14 @@ public class MarketMaintenanceService {
                 token.setCurrentPrice(PortfolioWalletService.GREY_TOKEN_PRICE);
                 token.setLastUpdate(Instant.now());
                 tokenRepository.save(token);
+                resetPriceHistory(token, PortfolioWalletService.GREY_TOKEN_PRICE);
                 continue;
             }
             BigDecimal newPrice = randomBasePrice();
             token.setCurrentPrice(newPrice);
             token.setLastUpdate(Instant.now());
             tokenRepository.save(token);
-            appendPriceHistory(token, newPrice);
+            resetPriceHistory(token, newPrice);
         }
 
         MarketResetAuditEntity audit = new MarketResetAuditEntity();
@@ -129,14 +130,14 @@ public class MarketMaintenanceService {
                 token.setCurrentPrice(PortfolioWalletService.GREY_TOKEN_PRICE);
                 token.setLastUpdate(Instant.now());
                 tokenRepository.save(token);
-                appendPriceHistory(token, PortfolioWalletService.GREY_TOKEN_PRICE);
+                resetPriceHistory(token, PortfolioWalletService.GREY_TOKEN_PRICE);
                 continue;
             }
             BigDecimal newPrice = randomBasePrice();
             token.setCurrentPrice(newPrice);
             token.setLastUpdate(Instant.now());
             tokenRepository.save(token);
-            appendPriceHistory(token, newPrice);
+            resetPriceHistory(token, newPrice);
         }
 
         userWalletRepository.deleteAll();
@@ -201,6 +202,11 @@ public class MarketMaintenanceService {
         history.setToken(token);
         history.setPrice(price);
         tokenPriceHistoryRepository.save(history);
+    }
+
+    private void resetPriceHistory(TokenEntity token, BigDecimal price) {
+        tokenPriceHistoryRepository.deleteByTokenTokenId(token.getTokenId());
+        appendPriceHistory(token, price);
     }
 
     private TokenEntity ensureGreyToken() {

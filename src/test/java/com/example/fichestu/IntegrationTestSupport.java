@@ -159,7 +159,7 @@ abstract class IntegrationTestSupport {
         createToken("Ficha Roja", "#FF0000", new BigDecimal("50.00"));
         createToken("Ficha Azul", "#0000FF", new BigDecimal("25.00"));
         createToken("Ficha Verde", "#00FF00", new BigDecimal("10.00"));
-        createToken("Ficha Dorada", "#FFD700", new BigDecimal("100.00"));
+        createToken("Ficha Morada", "#8B5CF6", new BigDecimal("100.00"));
         createToken("Ficha Gris", "#9CA3AF", new BigDecimal("1.00"));
         markPortfolioResetExecuted();
     }
