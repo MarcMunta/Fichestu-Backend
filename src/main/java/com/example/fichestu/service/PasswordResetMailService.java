@@ -20,6 +20,7 @@ public class PasswordResetMailService {
     private final GoogleAppsScriptEmailClient googleAppsScriptEmailClient;
     private final ResendEmailClient resendEmailClient;
     private final boolean mailEnabled;
+    private final boolean failOnEmailError;
     private final String fromAddress;
 
     public PasswordResetMailService(
@@ -27,12 +28,14 @@ public class PasswordResetMailService {
         ObjectProvider<GoogleAppsScriptEmailClient> googleAppsScriptEmailClientProvider,
         ObjectProvider<ResendEmailClient> resendEmailClientProvider,
         @Value("${app.password-reset.mail-enabled:false}") boolean mailEnabled,
+        @Value("${app.password-reset.fail-on-email-error:false}") boolean failOnEmailError,
         @Value("${app.password-reset.from:noreply@fichestu.local}") String fromAddress
     ) {
         this.mailSender = mailSenderProvider.getIfAvailable();
         this.googleAppsScriptEmailClient = googleAppsScriptEmailClientProvider.getIfAvailable();
         this.resendEmailClient = resendEmailClientProvider.getIfAvailable();
         this.mailEnabled = mailEnabled;
+        this.failOnEmailError = failOnEmailError;
         this.fromAddress = fromAddress;
     }
 
@@ -86,7 +89,10 @@ public class PasswordResetMailService {
             }
         }
 
-        throw recoveryEmailFailure();
+        log.warn("Password reset token for {} could not be emailed. Token kept valid for {} minutes.", email, expirationMinutes);
+        if (failOnEmailError) {
+            throw recoveryEmailFailure();
+        }
     }
 
     private ResponseStatusException recoveryEmailFailure() {

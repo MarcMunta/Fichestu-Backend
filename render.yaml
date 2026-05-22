@@ -32,6 +32,8 @@ services:
         value: "15"
       - key: PASSWORD_RESET_MAIL_ENABLED
         value: "false"
+      - key: PASSWORD_RESET_FAIL_ON_EMAIL_ERROR
+        value: "false"
       - key: PASSWORD_RESET_FROM
         value: noreply@fichestu.local
       - key: MAIL_HOST

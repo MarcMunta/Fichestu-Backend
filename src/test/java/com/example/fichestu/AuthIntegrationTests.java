@@ -122,6 +122,15 @@ class AuthIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void malformedAuthJsonReturnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{email:\"alice@test.com\",password:\"secret123\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Datos de entrada inválidos"));
+    }
+
+    @Test
     void passwordResetRequestCreatesTokenWithoutLeakingEmailExistence() throws Exception {
         createUser("alice", "alice@test.com", "secret123", "USER", new BigDecimal("100.00"));
 
