@@ -2027,11 +2027,11 @@ public class GameService {
         if (cardPower == null) {
             return fallback;
         }
-        return Math.max(1, Math.min(11, cardPower));
+        return Math.max(1, Math.min(10, cardPower));
     }
 
     private int randomBattlePower() {
-        return 1 + randomProvider.nextInt(11);
+        return 1 + randomProvider.nextInt(10);
     }
 
     private MatchParticipantEntity resolveBattleTarget(
@@ -2051,10 +2051,10 @@ public class GameService {
 
     private String randomAction() {
         double value = randomProvider.nextDouble();
-        if (value < (9.0 / 11.0)) {
+        if (value < (10.0 / 12.0)) {
             return "ATTACK";
         }
-        if (value < (10.0 / 11.0)) {
+        if (value < (11.0 / 12.0)) {
             return "SHIELD";
         }
         return "REBOUND";
