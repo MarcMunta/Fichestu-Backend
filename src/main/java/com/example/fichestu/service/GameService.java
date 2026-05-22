@@ -2087,7 +2087,7 @@ public class GameService {
             case "FICHA ROJA" -> new TokenMeta("FRO", colorCode == null ? "#FF0000" : colorCode);
             case "FICHA AZUL" -> new TokenMeta("FAZ", colorCode == null ? "#0000FF" : colorCode);
             case "FICHA VERDE" -> new TokenMeta("FVD", colorCode == null ? "#00FF00" : colorCode);
-            case "FICHA MORADA", "FICHA DORADA" -> new TokenMeta("FMO", colorCode == null ? "#8B5CF6" : colorCode);
+            case "FICHA MORADA", "FICHA DORADA" -> new TokenMeta("FMO", "#8B5CF6");
             case "FICHA GRIS", "FICHA INCOLORA", "STUM" -> new TokenMeta("STUM", colorCode == null ? PortfolioWalletService.GREY_TOKEN_COLOR : colorCode);
             default -> {
                 String ticker = tokenName == null ? "TOK" : tokenName.replace("Ficha", "").trim().toUpperCase(Locale.ROOT);

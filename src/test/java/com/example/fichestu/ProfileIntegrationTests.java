@@ -1,10 +1,12 @@
 package com.example.fichestu;
 
 import com.example.fichestu.persistence.entity.GameSessionEntity;
+import com.example.fichestu.persistence.entity.GameSessionEventEntity;
 import com.example.fichestu.persistence.entity.MatchParticipantEntity;
 import com.example.fichestu.persistence.entity.MatchParticipantId;
 import com.example.fichestu.persistence.entity.TransactionLogEntity;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -157,16 +159,19 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
         GameSessionEntity session = new GameSessionEntity();
         session.setStatus("FINISHED");
         session.setWinner(userWithBadges);
+        session.setEndTime(Instant.now());
         session = gameSessionRepository.save(session);
 
         MatchParticipantEntity participant = new MatchParticipantEntity();
         participant.setId(new MatchParticipantId(session.getMatchId(), userWithBadges.getUserId()));
         participant.setMatch(session);
         participant.setUser(userWithBadges);
+        participant.setSelectedBallNumber(4);
         participant.setCurrentHp(25);
         participant.setAlive(true);
         participant.setMultiplierWon(new BigDecimal("12.00"));
         matchParticipantRepository.save(participant);
+        createRoundSummary(session);
 
         mockMvc.perform(get("/api/profile/badges")
                 .header("Authorization", bearerFor(userWithoutBadges)))
@@ -192,28 +197,56 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
         GameSessionEntity wonSession = new GameSessionEntity();
         wonSession.setStatus("FINISHED");
         wonSession.setWinner(user);
+        wonSession.setEndTime(Instant.now());
         wonSession = gameSessionRepository.save(wonSession);
         MatchParticipantEntity wonParticipation = new MatchParticipantEntity();
         wonParticipation.setId(new MatchParticipantId(wonSession.getMatchId(), user.getUserId()));
         wonParticipation.setMatch(wonSession);
         wonParticipation.setUser(user);
+        wonParticipation.setSelectedBallNumber(7);
         wonParticipation.setCurrentHp(25);
         wonParticipation.setAlive(true);
         wonParticipation.setMultiplierWon(new BigDecimal("4.00"));
         matchParticipantRepository.save(wonParticipation);
+        createRoundSummary(wonSession);
 
         GameSessionEntity lostSession = new GameSessionEntity();
-        lostSession.setStatus("CLOSED");
+        lostSession.setStatus("FINISHED");
         lostSession.setWinner(rival);
+        lostSession.setEndTime(Instant.now());
         lostSession = gameSessionRepository.save(lostSession);
         MatchParticipantEntity lostParticipation = new MatchParticipantEntity();
         lostParticipation.setId(new MatchParticipantId(lostSession.getMatchId(), user.getUserId()));
         lostParticipation.setMatch(lostSession);
         lostParticipation.setUser(user);
+        lostParticipation.setSelectedBallNumber(8);
         lostParticipation.setCurrentHp(0);
         lostParticipation.setAlive(false);
         lostParticipation.setMultiplierWon(new BigDecimal("2.00"));
         matchParticipantRepository.save(lostParticipation);
+        createRoundSummary(lostSession);
+
+        GameSessionEntity cancelledSession = new GameSessionEntity();
+        cancelledSession.setStatus("MATCHMAKING");
+        cancelledSession = gameSessionRepository.save(cancelledSession);
+        MatchParticipantEntity cancelledParticipation = new MatchParticipantEntity();
+        cancelledParticipation.setId(new MatchParticipantId(cancelledSession.getMatchId(), user.getUserId()));
+        cancelledParticipation.setMatch(cancelledSession);
+        cancelledParticipation.setUser(user);
+        cancelledParticipation.setMultiplierWon(new BigDecimal("500.00"));
+        matchParticipantRepository.save(cancelledParticipation);
+
+        GameSessionEntity closedSession = new GameSessionEntity();
+        closedSession.setStatus("CLOSED");
+        closedSession.setEndTime(Instant.now());
+        closedSession = gameSessionRepository.save(closedSession);
+        MatchParticipantEntity closedParticipation = new MatchParticipantEntity();
+        closedParticipation.setId(new MatchParticipantId(closedSession.getMatchId(), user.getUserId()));
+        closedParticipation.setMatch(closedSession);
+        closedParticipation.setUser(user);
+        closedParticipation.setSelectedBallNumber(9);
+        closedParticipation.setMultiplierWon(new BigDecimal("300.00"));
+        matchParticipantRepository.save(closedParticipation);
 
         TransactionLogEntity reward = new TransactionLogEntity();
         reward.setUser(user);
@@ -238,5 +271,13 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.badges[0].unlocked").value(true))
             .andExpect(jsonPath("$.badges[1].unlocked").value(true))
             .andExpect(jsonPath("$.badges[2].unlocked").value(false));
+    }
+
+    private void createRoundSummary(GameSessionEntity session) {
+        GameSessionEventEntity event = new GameSessionEventEntity();
+        event.setMatch(session);
+        event.setEventType("ROUND_SUMMARY");
+        event.setMessage("Ronda 01");
+        gameSessionEventRepository.save(event);
     }
 }
