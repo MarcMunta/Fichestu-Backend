@@ -38,10 +38,10 @@ public class MinigameAttemptEntity {
     @Column(name = "entry_cost", nullable = false, precision = 15, scale = 2)
     private BigDecimal entryCost = BigDecimal.ZERO;
 
-    @Column(name = "reward_amount", precision = 15, scale = 2)
+    @Column(name = "reward_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal rewardAmount = BigDecimal.ZERO;
 
-    @Column
+    @Column(nullable = false)
     private Integer score = 0;
 
     @Column(name = "started_at", nullable = false, updatable = false)
