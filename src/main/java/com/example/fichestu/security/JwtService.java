@@ -4,17 +4,16 @@ import com.example.fichestu.persistence.entity.UserEntity;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.Key;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.HexFormat;
 import java.util.Optional;
+import javax.crypto.SecretKey;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -35,13 +34,13 @@ public class JwtService {
         Instant expiresAt = issuedAt.plus(ttl);
 
         return Jwts.builder()
-            .setSubject(user.getEmail())
+            .subject(user.getEmail())
             .claim("uid", user.getUserId())
             .claim("email", user.getEmail())
             .claim("username", user.getUsername())
-            .setIssuedAt(Date.from(issuedAt))
-            .setExpiration(Date.from(expiresAt))
-            .signWith(signingKey(), SignatureAlgorithm.HS256)
+            .issuedAt(Date.from(issuedAt))
+            .expiration(Date.from(expiresAt))
+            .signWith(signingKey(), Jwts.SIG.HS256)
             .compact();
     }
 
@@ -52,11 +51,11 @@ public class JwtService {
 
     public Optional<JwtTokenClaims> parseClaims(String token) {
         try {
-            Claims claims = Jwts.parserBuilder()
-                .setSigningKey(signingKey())
+            Claims claims = Jwts.parser()
+                .verifyWith(signingKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
 
             Integer userId = claims.get("uid", Integer.class);
             String email = claims.get("email", String.class);
@@ -82,7 +81,7 @@ public class JwtService {
         }
     }
 
-    private Key signingKey() {
+    private SecretKey signingKey() {
         byte[] secretBytes = jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8);
         if (secretBytes.length < 32) {
             throw new IllegalStateException("JWT secret must be at least 32 bytes");
