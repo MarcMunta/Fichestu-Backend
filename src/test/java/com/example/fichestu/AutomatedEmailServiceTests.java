@@ -2,6 +2,7 @@ package com.example.fichestu;
 
 import com.example.fichestu.persistence.entity.UserEntity;
 import com.example.fichestu.service.AutomatedEmailService;
+import com.example.fichestu.service.PasswordResetMailService;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -9,6 +10,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -67,6 +69,21 @@ class AutomatedEmailServiceTests {
         service.sendImportantUpdateEmail(user(), "Aviso", "Mensaje", "SYSTEM");
 
         verify(mailSender, never()).send(any(SimpleMailMessage.class));
+    }
+
+    @Test
+    void passwordResetDoesNotFailRequestWhenProvidersAreDown() {
+        PasswordResetMailService service = new PasswordResetMailService(
+            providerFor(null),
+            providerFor(null),
+            providerFor(null),
+            true,
+            false,
+            "noreply@test.local"
+        );
+
+        assertThatCode(() -> service.sendResetToken("alice@test.com", "123456", 15))
+            .doesNotThrowAnyException();
     }
 
     @SuppressWarnings("unchecked")
