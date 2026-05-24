@@ -322,6 +322,50 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.stats.averageMultiplier").value(2.5));
     }
 
+    @Test
+    void statsRemainAfterUserAbandonsAnActiveBattle() throws Exception {
+        var user = createUser("profile-abandon", "profile-abandon@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        var rival = createUser("profile-abandon-rival", "profile-abandon-rival@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        GameSessionEntity session = new GameSessionEntity();
+        session.setStatus("IN_PROGRESS");
+        session = gameSessionRepository.save(session);
+
+        MatchParticipantEntity participation = new MatchParticipantEntity();
+        participation.setId(new MatchParticipantId(session.getMatchId(), user.getUserId()));
+        participation.setMatch(session);
+        participation.setUser(user);
+        participation.setSelectedBallNumber(12);
+        participation.setCurrentHp(0);
+        participation.setAlive(false);
+        participation.setMultiplierWon(new BigDecimal("2.50"));
+        matchParticipantRepository.save(participation);
+
+        MatchParticipantEntity rivalParticipation = new MatchParticipantEntity();
+        rivalParticipation.setId(new MatchParticipantId(session.getMatchId(), rival.getUserId()));
+        rivalParticipation.setMatch(session);
+        rivalParticipation.setUser(rival);
+        rivalParticipation.setSelectedBallNumber(13);
+        rivalParticipation.setCurrentHp(20);
+        rivalParticipation.setAlive(true);
+        rivalParticipation.setMultiplierWon(new BigDecimal("1.25"));
+        matchParticipantRepository.save(rivalParticipation);
+        createRoundSummary(session);
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/abandon", session.getMatchId())
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/profile/stats")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.stats.ballRoomsPlayed").value(1))
+            .andExpect(jsonPath("$.stats.battlesPlayed").value(1))
+            .andExpect(jsonPath("$.stats.battlesWon").value(0))
+            .andExpect(jsonPath("$.stats.bestMultiplier").value(2.5))
+            .andExpect(jsonPath("$.stats.averageMultiplier").value(2.5));
+    }
+
     private void createRoundSummary(GameSessionEntity session) {
         GameSessionEventEntity event = new GameSessionEventEntity();
         event.setMatch(session);

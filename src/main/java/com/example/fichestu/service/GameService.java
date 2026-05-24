@@ -339,6 +339,7 @@ public class GameService {
 
         MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
+        archiveParticipantStats(session, participant);
         matchParticipantRepository.delete(participant);
         refundBallEntry(user, matchId);
         logEvent(session, "MATCHMAKING_CANCELLED", user.getUsername() + " ha cancelado el matchmaking.");
@@ -378,6 +379,7 @@ public class GameService {
 
         MatchParticipantEntity participant = matchParticipantRepository.findById(new MatchParticipantId(matchId, user.getUserId()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta sala"));
+        archiveParticipantStats(session, participant);
         matchParticipantRepository.delete(participant);
         refundBallEntry(user, matchId);
         logEvent(session, "MATCHMAKING_ABANDONED", user.getUsername() + " ha abandonado el matchmaking. Entrada devuelta.");
@@ -424,6 +426,7 @@ public class GameService {
             );
         }
 
+        archiveParticipantStats(session, participant);
         matchParticipantRepository.delete(participant);
         closeIfOnlyBotsRemain(session);
         if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
@@ -1479,6 +1482,7 @@ public class GameService {
         }
 
         if (isRefundableEntryStatus(session.getStatus())) {
+            archiveParticipantStats(session, participant);
             matchParticipantRepository.delete(participant);
             refundBallEntry(user, session.getMatchId());
             logEvent(session, "MATCH_ABANDONED", user.getUsername() + " ha abandonado una sala anterior al volver a entrar. Entrada devuelta.");
@@ -1500,6 +1504,7 @@ public class GameService {
             return;
         }
 
+        archiveParticipantStats(session, participant);
         matchParticipantRepository.delete(participant);
         closeIfOnlyBotsRemain(session);
         if (STATUS_CLOSED.equalsIgnoreCase(session.getStatus()) || "FINISHED".equalsIgnoreCase(session.getStatus())) {
@@ -1755,6 +1760,7 @@ public class GameService {
 
     private void detachParticipantWithoutRefund(GameSessionEntity session, MatchParticipantEntity participant) {
         String status = session.getStatus();
+        archiveParticipantStats(session, participant);
         matchParticipantRepository.delete(participant);
 
         if (STATUS_CLOSED.equalsIgnoreCase(status) || "FINISHED".equalsIgnoreCase(status)) {
@@ -1826,25 +1832,32 @@ public class GameService {
     private void archiveMatchStats(GameSessionEntity session) {
         Integer matchId = session.getMatchId();
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+
+        for (MatchParticipantEntity participant : participants) {
+            archiveParticipantStats(session, participant);
+        }
+    }
+
+    private void archiveParticipantStats(GameSessionEntity session, MatchParticipantEntity participant) {
+        if (session == null || participant == null || participant.getUser() == null || isBotUser(participant.getUser())) {
+            return;
+        }
+
+        Integer matchId = session.getMatchId();
+        UserEntity participantUser = participant.getUser();
+        String matchDescription = "Match #" + matchId;
         boolean battlePlayed = gameSessionEventRepository.countByMatchMatchIdAndEventType(matchId, EVENT_ROUND_SUMMARY) > 0;
         Integer winnerId = session.getWinner() == null ? null : session.getWinner().getUserId();
 
-        for (MatchParticipantEntity participant : participants) {
-            UserEntity participantUser = participant.getUser();
-            if (isBotUser(participantUser)) {
-                continue;
-            }
-            String matchDescription = "Match #" + matchId;
-            if (participant.getSelectedBallNumber() != null) {
-                logProfileStatOnce(participantUser, TYPE_PROFILE_BALL_ROOM, BigDecimal.ONE, matchDescription);
-                logProfileStatOnce(participantUser, TYPE_PROFILE_MULTIPLIER, participant.getMultiplierWon(), matchDescription);
-            }
-            if (battlePlayed) {
-                logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE, BigDecimal.ONE, matchDescription);
-            }
-            if (winnerId != null && winnerId.equals(participantUser.getUserId())) {
-                logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE_WIN, BigDecimal.ONE, matchDescription);
-            }
+        if (participant.getSelectedBallNumber() != null) {
+            logProfileStatOnce(participantUser, TYPE_PROFILE_BALL_ROOM, BigDecimal.ONE, matchDescription);
+            logProfileStatOnce(participantUser, TYPE_PROFILE_MULTIPLIER, participant.getMultiplierWon(), matchDescription);
+        }
+        if (battlePlayed) {
+            logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE, BigDecimal.ONE, matchDescription);
+        }
+        if (winnerId != null && winnerId.equals(participantUser.getUserId())) {
+            logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE_WIN, BigDecimal.ONE, matchDescription);
         }
     }
 
