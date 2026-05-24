@@ -26,6 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlayerProfileReadService {
 
     private static final String TYPE_REWARDED = "REWARDED";
+    private static final String TYPE_PROFILE_BALL_ROOM = "PROFILE_BALL_ROOM_PLAYED";
+    private static final String TYPE_PROFILE_BATTLE = "PROFILE_BATTLE_PLAYED";
+    private static final String TYPE_PROFILE_BATTLE_WIN = "PROFILE_BATTLE_WON";
+    private static final String TYPE_PROFILE_MULTIPLIER = "PROFILE_MULTIPLIER";
     private static final Duration REWARDED_COOLDOWN = Duration.ofSeconds(30);
 
     private final BadgeRepository badgeRepository;
@@ -50,13 +54,29 @@ public class PlayerProfileReadService {
 
     @Transactional(readOnly = true)
     public ProfileStatsDto loadStatsForUser(Integer userId) {
-        int ballRoomsPlayed = Math.toIntExact(matchParticipantRepository.countRealBallRoomsPlayed(userId));
-        int battlesPlayed = Math.toIntExact(matchParticipantRepository.countRealBattlesPlayed(userId));
-        int battlesWon = Math.toIntExact(matchParticipantRepository.countRealBattlesWon(userId));
+        int archivedBallRooms = Math.toIntExact(transactionLogRepository.countByUserUserIdAndType(userId, TYPE_PROFILE_BALL_ROOM));
+        int archivedBattles = Math.toIntExact(transactionLogRepository.countByUserUserIdAndType(userId, TYPE_PROFILE_BATTLE));
+        int archivedWins = Math.toIntExact(transactionLogRepository.countByUserUserIdAndType(userId, TYPE_PROFILE_BATTLE_WIN));
+        int activeBallRooms = Math.toIntExact(matchParticipantRepository.countRealBallRoomsPlayed(userId));
+        int activeBattles = Math.toIntExact(matchParticipantRepository.countRealBattlesPlayed(userId));
+        int activeWins = Math.toIntExact(matchParticipantRepository.countRealBattlesWon(userId));
+        int ballRoomsPlayed = activeBallRooms + archivedBallRooms;
+        int battlesPlayed = activeBattles + archivedBattles;
+        int battlesWon = activeWins + archivedWins;
         BigDecimal bestMultiplierValue = matchParticipantRepository.findBestRealMultiplier(userId);
-        double bestMultiplier = bestMultiplierValue == null ? 1.0 : bestMultiplierValue.doubleValue();
+        BigDecimal archivedBestMultiplier = transactionLogRepository.findMaxAmountByUserAndType(userId, TYPE_PROFILE_MULTIPLIER);
+        double bestMultiplier = Math.max(
+            bestMultiplierValue == null ? 1.0 : bestMultiplierValue.doubleValue(),
+            archivedBestMultiplier == null ? 1.0 : archivedBestMultiplier.doubleValue()
+        );
         Double averageMultiplierValue = matchParticipantRepository.findAverageRealMultiplier(userId);
-        double average = averageMultiplierValue == null ? 1.0 : averageMultiplierValue;
+        Double archivedAverageMultiplier = transactionLogRepository.findAverageAmountByUserAndType(userId, TYPE_PROFILE_MULTIPLIER);
+        double activeAverage = averageMultiplierValue == null ? 1.0 : averageMultiplierValue;
+        double archivedAverage = archivedAverageMultiplier == null ? 1.0 : archivedAverageMultiplier;
+        int multiplierSamples = activeBallRooms + archivedBallRooms;
+        double average = multiplierSamples == 0
+            ? 1.0
+            : ((activeAverage * activeBallRooms) + (archivedAverage * archivedBallRooms)) / multiplierSamples;
         int rewardedAds = (int) transactionLogRepository.countByUserUserIdAndType(userId, TYPE_REWARDED);
 
         return new ProfileStatsDto(

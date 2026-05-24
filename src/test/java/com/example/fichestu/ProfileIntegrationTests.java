@@ -11,6 +11,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -271,6 +272,54 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.badges[0].unlocked").value(true))
             .andExpect(jsonPath("$.badges[1].unlocked").value(true))
             .andExpect(jsonPath("$.badges[2].unlocked").value(false));
+    }
+
+    @Test
+    void statsRemainAfterMatchRowsAreDeleted() throws Exception {
+        var user = createUser("profile-archive", "profile-archive@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        var rival = createUser("profile-rival", "profile-rival@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        GameSessionEntity session = new GameSessionEntity();
+        session.setStatus("FINISHED");
+        session.setWinner(user);
+        session.setEndTime(Instant.now());
+        session = gameSessionRepository.save(session);
+
+        MatchParticipantEntity participation = new MatchParticipantEntity();
+        participation.setId(new MatchParticipantId(session.getMatchId(), user.getUserId()));
+        participation.setMatch(session);
+        participation.setUser(user);
+        participation.setSelectedBallNumber(12);
+        participation.setCurrentHp(20);
+        participation.setAlive(true);
+        participation.setMultiplierWon(new BigDecimal("2.50"));
+        matchParticipantRepository.save(participation);
+
+        MatchParticipantEntity rivalParticipation = new MatchParticipantEntity();
+        rivalParticipation.setId(new MatchParticipantId(session.getMatchId(), rival.getUserId()));
+        rivalParticipation.setMatch(session);
+        rivalParticipation.setUser(rival);
+        rivalParticipation.setSelectedBallNumber(13);
+        rivalParticipation.setCurrentHp(0);
+        rivalParticipation.setAlive(false);
+        rivalParticipation.setMultiplierWon(new BigDecimal("1.25"));
+        matchParticipantRepository.save(rivalParticipation);
+        createRoundSummary(session);
+
+        mockMvc.perform(post("/api/game/matches/{matchId}/close", session.getMatchId())
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk());
+
+        assertThat(matchParticipantRepository.findByIdMatchId(session.getMatchId())).isEmpty();
+
+        mockMvc.perform(get("/api/profile/stats")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.stats.ballRoomsPlayed").value(1))
+            .andExpect(jsonPath("$.stats.battlesPlayed").value(1))
+            .andExpect(jsonPath("$.stats.battlesWon").value(1))
+            .andExpect(jsonPath("$.stats.bestMultiplier").value(2.5))
+            .andExpect(jsonPath("$.stats.averageMultiplier").value(2.5));
     }
 
     private void createRoundSummary(GameSessionEntity session) {

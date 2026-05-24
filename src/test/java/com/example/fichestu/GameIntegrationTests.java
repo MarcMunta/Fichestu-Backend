@@ -478,6 +478,54 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void legacySequentialBotBallsAreRandomizedBeforeSelectionIsShown() throws Exception {
+        createDefaultTokens();
+        testRandomProvider.useLastInt();
+        var user = createUser("legacy-bots", "legacy-bots@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setMatchmakingDeadline(Instant.now().minusSeconds(1));
+        gameSessionRepository.save(session);
+
+        mockMvc.perform(get("/api/game/match/state")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.phase").value("PICKING"));
+
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        int nextBall = 1;
+        for (MatchParticipantEntity participant : participants) {
+            if (participant.getId().getUserId().equals(user.getUserId())) {
+                participant.setSelectedBallNumber(null);
+            } else {
+                participant.setSelectedBallNumber(nextBall++);
+            }
+        }
+        matchParticipantRepository.saveAll(participants);
+
+        mockMvc.perform(get("/api/game/match/state")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.phase").value("PICKING"));
+
+        List<Integer> repairedBotBalls = matchParticipantRepository.findByIdMatchId(matchId)
+            .stream()
+            .filter(participant -> !participant.getId().getUserId().equals(user.getUserId()))
+            .map(MatchParticipantEntity::getSelectedBallNumber)
+            .toList();
+        assertThat(repairedBotBalls).contains(50, 49, 48);
+        assertThat(repairedBotBalls).doesNotContain(1, 2, 3);
+    }
+
+    @Test
     void leavingBeforeBattleStartsDoesNotRefundEntry() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
@@ -764,6 +812,12 @@ class GameIntegrationTests extends IntegrationTestSupport {
         assertThat(finishedSession.getImpactApplied()).isTrue();
         assertThat(finishedSession.getWinnerTokenAlias()).isEqualTo("DORADA");
         assertThat(findTokenByName("Ficha Dorada").getCurrentPrice()).isEqualByComparingTo(new BigDecimal("200.00"));
+
+        mockMvc.perform(get("/api/game/market")
+                .header("Authorization", bearerFor(users.get(0))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.tokens[3].name").value("Ficha Morada"))
+            .andExpect(jsonPath("$.tokens[3].ticker").value("FMO"));
     }
 
     @Test

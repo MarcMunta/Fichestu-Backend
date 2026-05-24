@@ -78,6 +78,10 @@ public class GameService {
     private static final int BALL_SELECTION_SECONDS = 20;
     private static final int BATTLE_ROUND_SECONDS = 25;
     private static final String TYPE_REWARDED = "REWARDED";
+    private static final String TYPE_PROFILE_BALL_ROOM = "PROFILE_BALL_ROOM_PLAYED";
+    private static final String TYPE_PROFILE_BATTLE = "PROFILE_BATTLE_PLAYED";
+    private static final String TYPE_PROFILE_BATTLE_WIN = "PROFILE_BATTLE_WON";
+    private static final String TYPE_PROFILE_MULTIPLIER = "PROFILE_MULTIPLIER";
     private static final String EVENT_ROUND_SUMMARY = "ROUND_SUMMARY";
     private static final String STATUS_MATCHMAKING = "MATCHMAKING";
     private static final String STATUS_PICKING = "PICKING";
@@ -1056,6 +1060,10 @@ public class GameService {
 
     private BallRoomDto buildBallRoomDto(GameSessionEntity session, Integer userId) {
         List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        if (STATUS_PICKING.equalsIgnoreCase(session.getStatus())) {
+            randomizeLegacySequentialBotBalls(session, participants);
+            participants = matchParticipantRepository.findByIdMatchId(session.getMatchId());
+        }
         Map<Integer, Double> multiplierByBall = new HashMap<>();
         for (MatchParticipantEntity participant : participants) {
             if (participant.getSelectedBallNumber() != null && participant.getMultiplierWon() != null) {
@@ -1290,7 +1298,7 @@ public class GameService {
 
             tokens.add(new TokenDto(
                 token.getTokenId(),
-                portfolioWalletService.isGreyToken(token) ? "Stum" : token.getName(),
+                portfolioWalletService.isGreyToken(token) ? "Stum" : displayTokenName(token),
                 meta.ticker(),
                 meta.colorCode(),
                 token.getCurrentPrice(),
@@ -1638,6 +1646,47 @@ public class GameService {
         logEvent(session, "BOT_BALLS_PICKED", "Los bots han elegido sus bolas automaticamente.");
     }
 
+    private void randomizeLegacySequentialBotBalls(GameSessionEntity session, List<MatchParticipantEntity> participants) {
+        boolean humanAlreadyPicked = participants.stream()
+            .filter(participant -> !isBotUser(participant.getUser()))
+            .anyMatch(participant -> participant.getSelectedBallNumber() != null);
+        if (humanAlreadyPicked) {
+            return;
+        }
+
+        List<MatchParticipantEntity> pickedBots = participants.stream()
+            .filter(participant -> isBotUser(participant.getUser()))
+            .filter(participant -> participant.getSelectedBallNumber() != null)
+            .toList();
+        if (pickedBots.isEmpty()) {
+            return;
+        }
+
+        Set<Integer> botBalls = pickedBots.stream()
+            .map(MatchParticipantEntity::getSelectedBallNumber)
+            .collect(HashSet::new, HashSet::add, HashSet::addAll);
+        boolean legacySequential = botBalls.size() == pickedBots.size();
+        for (int ballNumber = 1; ballNumber <= pickedBots.size() && legacySequential; ballNumber++) {
+            legacySequential = botBalls.contains(ballNumber);
+        }
+        if (!legacySequential) {
+            return;
+        }
+
+        Set<Integer> pickedNumbers = new HashSet<>();
+        for (MatchParticipantEntity bot : pickedBots) {
+            bot.setSelectedBallNumber(null);
+        }
+        for (MatchParticipantEntity bot : pickedBots) {
+            Integer nextBall = pickRandomAvailableBall(pickedNumbers);
+            if (nextBall != null) {
+                bot.setSelectedBallNumber(nextBall);
+            }
+        }
+        matchParticipantRepository.saveAll(pickedBots);
+        logEvent(session, "BOT_BALLS_RANDOMIZED", "Bolas de bots remezcladas aleatoriamente.");
+    }
+
     private void assignMissingBallPicks(GameSessionEntity session, List<MatchParticipantEntity> participants) {
         Set<Integer> pickedNumbers = participants.stream()
             .map(MatchParticipantEntity::getSelectedBallNumber)
@@ -1752,6 +1801,7 @@ public class GameService {
     }
 
     private void deleteSessionRow(GameSessionEntity session) {
+        archiveMatchStats(session);
         Integer matchId = session.getMatchId();
         entityManager.flush();
         entityManager
@@ -1771,6 +1821,38 @@ public class GameService {
             .createNativeQuery("delete from game_sessions where match_id = :matchId")
             .setParameter("matchId", matchId)
             .executeUpdate();
+    }
+
+    private void archiveMatchStats(GameSessionEntity session) {
+        Integer matchId = session.getMatchId();
+        List<MatchParticipantEntity> participants = matchParticipantRepository.findByIdMatchId(matchId);
+        boolean battlePlayed = gameSessionEventRepository.countByMatchMatchIdAndEventType(matchId, EVENT_ROUND_SUMMARY) > 0;
+        Integer winnerId = session.getWinner() == null ? null : session.getWinner().getUserId();
+
+        for (MatchParticipantEntity participant : participants) {
+            UserEntity participantUser = participant.getUser();
+            if (isBotUser(participantUser)) {
+                continue;
+            }
+            String matchDescription = "Match #" + matchId;
+            if (participant.getSelectedBallNumber() != null) {
+                logProfileStatOnce(participantUser, TYPE_PROFILE_BALL_ROOM, BigDecimal.ONE, matchDescription);
+                logProfileStatOnce(participantUser, TYPE_PROFILE_MULTIPLIER, participant.getMultiplierWon(), matchDescription);
+            }
+            if (battlePlayed) {
+                logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE, BigDecimal.ONE, matchDescription);
+            }
+            if (winnerId != null && winnerId.equals(participantUser.getUserId())) {
+                logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE_WIN, BigDecimal.ONE, matchDescription);
+            }
+        }
+    }
+
+    private void logProfileStatOnce(UserEntity user, String type, BigDecimal amount, String description) {
+        if (user == null || transactionLogRepository.existsByUserUserIdAndTypeAndDescription(user.getUserId(), type, description)) {
+            return;
+        }
+        logInternalTransaction(user, type, amount == null ? BigDecimal.ONE : amount, description);
     }
 
     private void closeIfOnlyBotsRemain(GameSessionEntity session) {
@@ -2102,6 +2184,14 @@ public class GameService {
                 yield new TokenMeta(ticker, colorCode == null ? "#FFFFFF" : colorCode);
             }
         };
+    }
+
+    private String displayTokenName(TokenEntity token) {
+        TokenMeta meta = tokenMeta(token.getName(), token.getColorCode());
+        if ("FMO".equals(meta.ticker())) {
+            return "Ficha Morada";
+        }
+        return token.getName();
     }
 
     private record TokenMeta(String ticker, String colorCode) {
