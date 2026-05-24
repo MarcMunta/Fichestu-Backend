@@ -444,6 +444,40 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void botsPickRandomAvailableBallsInsteadOfFirstFreeNumbers() throws Exception {
+        createDefaultTokens();
+        testRandomProvider.useLastInt();
+        var user = createUser("random-bots", "random-bots@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        String enterBody = mockMvc.perform(post("/api/game/ball-room/enter")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        int matchId = objectMapper.readTree(enterBody).get("matchId").asInt();
+
+        GameSessionEntity session = gameSessionRepository.findById(matchId).orElseThrow();
+        session.setMatchmakingDeadline(Instant.now().minusSeconds(1));
+        gameSessionRepository.save(session);
+
+        mockMvc.perform(get("/api/game/match/state")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ballRoom.phase").value("PICKING"));
+
+        List<Integer> botBalls = matchParticipantRepository.findByIdMatchId(matchId)
+            .stream()
+            .filter(participant -> !participant.getId().getUserId().equals(user.getUserId()))
+            .map(MatchParticipantEntity::getSelectedBallNumber)
+            .toList();
+
+        assertThat(botBalls).hasSize(9);
+        assertThat(botBalls).contains(50, 49, 48);
+        assertThat(botBalls).doesNotContain(1, 2, 3);
+    }
+
+    @Test
     void leavingBeforeBattleStartsDoesNotRefundEntry() throws Exception {
         createDefaultTokens();
         List<UserEntity> users = createPlayers(10, new BigDecimal("100.00"));
@@ -868,7 +902,14 @@ class GameIntegrationTests extends IntegrationTestSupport {
     }
 
     static class TestRandomProvider extends RandomProvider {
+        private boolean useLastInt;
+
         void reset() {
+            useLastInt = false;
+        }
+
+        void useLastInt() {
+            useLastInt = true;
         }
 
         @Override
@@ -878,6 +919,9 @@ class GameIntegrationTests extends IntegrationTestSupport {
 
         @Override
         public int nextInt(int boundExclusive) {
+            if (useLastInt) {
+                return Math.max(0, boundExclusive - 1);
+            }
             return 0;
         }
     }

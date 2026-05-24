@@ -1625,17 +1625,13 @@ public class GameService {
             .filter(value -> value != null)
             .collect(HashSet::new, HashSet::add, HashSet::addAll);
 
-        int nextBall = 1;
         for (MatchParticipantEntity participant : participants) {
             if (!"BOT".equalsIgnoreCase(participant.getUser().getRole()) || participant.getSelectedBallNumber() != null) {
                 continue;
             }
-            while (pickedNumbers.contains(nextBall) && nextBall <= BALL_COUNT) {
-                nextBall++;
-            }
-            if (nextBall <= BALL_COUNT) {
+            Integer nextBall = pickRandomAvailableBall(pickedNumbers);
+            if (nextBall != null) {
                 participant.setSelectedBallNumber(nextBall);
-                pickedNumbers.add(nextBall);
                 matchParticipantRepository.save(participant);
             }
         }
@@ -1648,21 +1644,32 @@ public class GameService {
             .filter(value -> value != null)
             .collect(HashSet::new, HashSet::add, HashSet::addAll);
 
-        int nextBall = 1;
         for (MatchParticipantEntity participant : participants) {
             if (participant.getSelectedBallNumber() != null) {
                 continue;
             }
-            while (pickedNumbers.contains(nextBall) && nextBall <= BALL_COUNT) {
-                nextBall++;
-            }
-            if (nextBall <= BALL_COUNT) {
+            Integer nextBall = pickRandomAvailableBall(pickedNumbers);
+            if (nextBall != null) {
                 participant.setSelectedBallNumber(nextBall);
-                pickedNumbers.add(nextBall);
                 matchParticipantRepository.save(participant);
             }
         }
         logEvent(session, "MISSING_BALLS_PICKED", "El servidor asigno automaticamente las bolas pendientes.");
+    }
+
+    private Integer pickRandomAvailableBall(Set<Integer> pickedNumbers) {
+        List<Integer> availableBalls = new ArrayList<>();
+        for (int ballNumber = 1; ballNumber <= BALL_COUNT; ballNumber++) {
+            if (!pickedNumbers.contains(ballNumber)) {
+                availableBalls.add(ballNumber);
+            }
+        }
+        if (availableBalls.isEmpty()) {
+            return null;
+        }
+        Integer selectedBall = availableBalls.get(randomProvider.nextInt(availableBalls.size()));
+        pickedNumbers.add(selectedBall);
+        return selectedBall;
     }
 
     private void closeIfMatchmakingIsEmpty(GameSessionEntity session) {
