@@ -752,6 +752,12 @@ class GameIntegrationTests extends IntegrationTestSupport {
         assertThat(finishedSession.getWinnerTokenAlias()).isEqualTo("FRO");
         assertThat(findTokenByName("Ficha Roja").getCurrentPrice())
             .isEqualByComparingTo(oldPrice.multiply(new BigDecimal("3.00")));
+        assertThat(notificationRepository.findTop20ByUser_UserIdOrderByCreatedAtDesc(users.get(0).getUserId()))
+            .anySatisfy(notification -> {
+                assertThat(notification.getTitle()).isEqualTo("Multiplicador aplicado");
+                assertThat(notification.getMessage()).contains("x3.00").contains("Ficha Roja");
+                assertThat(notification.getType()).isEqualTo("WINNER_IMPACT");
+            });
 
         mockMvc.perform(post("/api/game/matches/{matchId}/winner-impact", matchId)
                 .header("Authorization", bearerFor(users.get(0)))

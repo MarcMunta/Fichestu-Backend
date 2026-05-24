@@ -1044,6 +1044,12 @@ public class GameService {
         gameSessionRepository.save(session);
 
         logEvent(session, "WINNER_IMPACT", triggeredBy.getUsername() + " aplica x" + formatMultiplier(marketMultiplier.doubleValue()) + " sobre " + token.getName() + ".");
+        notificationService.create(
+            triggeredBy,
+            "Multiplicador aplicado",
+            "Has aplicado x" + formatMultiplier(marketMultiplier.doubleValue()) + " sobre " + token.getName() + ".",
+            "WINNER_IMPACT"
+        );
     }
 
     private MatchStateResponse buildMatchStateResponse(
