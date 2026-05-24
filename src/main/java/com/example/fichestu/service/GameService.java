@@ -1856,9 +1856,21 @@ public class GameService {
         if (battlePlayed) {
             logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE, BigDecimal.ONE, matchDescription);
         }
-        if (winnerId != null && winnerId.equals(participantUser.getUserId())) {
+        if ((winnerId != null && winnerId.equals(participantUser.getUserId())) || participantIsOnlyAliveWinner(session, participant)) {
             logProfileStatOnce(participantUser, TYPE_PROFILE_BATTLE_WIN, BigDecimal.ONE, matchDescription);
         }
+    }
+
+    private boolean participantIsOnlyAliveWinner(GameSessionEntity session, MatchParticipantEntity participant) {
+        if (session == null || participant == null || !"FINISHED".equalsIgnoreCase(session.getStatus())) {
+            return false;
+        }
+        if (session.getWinner() != null || !Boolean.TRUE.equals(participant.getAlive())) {
+            return false;
+        }
+        return matchParticipantRepository.findByIdMatchId(session.getMatchId()).stream()
+            .filter(candidate -> Boolean.TRUE.equals(candidate.getAlive()))
+            .allMatch(candidate -> candidate.getUser().getUserId().equals(participant.getUser().getUserId()));
     }
 
     private void logProfileStatOnce(UserEntity user, String type, BigDecimal amount, String description) {

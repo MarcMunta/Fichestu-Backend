@@ -366,6 +366,48 @@ class ProfileIntegrationTests extends IntegrationTestSupport {
             .andExpect(jsonPath("$.stats.averageMultiplier").value(2.5));
     }
 
+    @Test
+    void inferredWinnerStatsRemainAfterWinnerLogsOut() throws Exception {
+        var user = createUser("profile-winner-logout", "profile-winner-logout@test.com", "secret123", "USER", new BigDecimal("100.00"));
+        var rival = createUser("profile-winner-rival", "profile-winner-rival@test.com", "secret123", "USER", new BigDecimal("100.00"));
+
+        GameSessionEntity session = new GameSessionEntity();
+        session.setStatus("FINISHED");
+        session.setEndTime(Instant.now());
+        session = gameSessionRepository.save(session);
+
+        MatchParticipantEntity participation = new MatchParticipantEntity();
+        participation.setId(new MatchParticipantId(session.getMatchId(), user.getUserId()));
+        participation.setMatch(session);
+        participation.setUser(user);
+        participation.setSelectedBallNumber(12);
+        participation.setCurrentHp(20);
+        participation.setAlive(true);
+        participation.setMultiplierWon(new BigDecimal("2.50"));
+        matchParticipantRepository.save(participation);
+
+        MatchParticipantEntity rivalParticipation = new MatchParticipantEntity();
+        rivalParticipation.setId(new MatchParticipantId(session.getMatchId(), rival.getUserId()));
+        rivalParticipation.setMatch(session);
+        rivalParticipation.setUser(rival);
+        rivalParticipation.setSelectedBallNumber(13);
+        rivalParticipation.setCurrentHp(0);
+        rivalParticipation.setAlive(false);
+        rivalParticipation.setMultiplierWon(new BigDecimal("1.25"));
+        matchParticipantRepository.save(rivalParticipation);
+        createRoundSummary(session);
+
+        mockMvc.perform(post("/api/auth/logout")
+                .header("Authorization", bearerFor(user)))
+            .andExpect(status().isOk());
+
+        assertThat(transactionLogRepository.countByUserUserIdAndType(user.getUserId(), "PROFILE_BALL_ROOM_PLAYED")).isEqualTo(1);
+        assertThat(transactionLogRepository.countByUserUserIdAndType(user.getUserId(), "PROFILE_BATTLE_PLAYED")).isEqualTo(1);
+        assertThat(transactionLogRepository.countByUserUserIdAndType(user.getUserId(), "PROFILE_BATTLE_WON")).isEqualTo(1);
+        assertThat(transactionLogRepository.findMaxAmountByUserAndType(user.getUserId(), "PROFILE_MULTIPLIER"))
+            .isEqualByComparingTo(new BigDecimal("2.50"));
+    }
+
     private void createRoundSummary(GameSessionEntity session) {
         GameSessionEventEntity event = new GameSessionEventEntity();
         event.setMatch(session);

@@ -49,7 +49,20 @@ public interface MatchParticipantRepository extends JpaRepository<MatchParticipa
         where participant.id.userId = :userId
           and upper(participant.match.status) = 'FINISHED'
           and participant.match.endTime is not null
-          and participant.match.winner.userId = :userId
+          and (
+              participant.match.winner.userId = :userId
+              or (
+                  participant.match.winner is null
+                  and participant.alive = true
+                  and not exists (
+                      select other.id.userId
+                      from MatchParticipantEntity other
+                      where other.match.matchId = participant.match.matchId
+                        and other.id.userId <> participant.id.userId
+                        and other.alive = true
+                  )
+              )
+          )
           and exists (
               select event.eventId
               from GameSessionEventEntity event
